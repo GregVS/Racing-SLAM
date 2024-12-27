@@ -6,24 +6,27 @@ cv::VideoCapture initializeVideo(const std::string &videoPath)
     if (!cap.isOpened()) {
         throw std::runtime_error("Error: Could not open video file!");
     }
+    cv::namedWindow("Video", cv::WINDOW_NORMAL);
+    cv::resizeWindow("Video", 1280, 720);
     return cap;
 }
 
-bool displayFrame(cv::VideoCapture &cap)
+bool nextFrame(cv::VideoCapture &cap, cv::Mat &frame)
 {
-    cv::Mat frame;
     bool isSuccess = cap.read(frame);
     if (!isSuccess) {
         std::cerr << "End of video or cannot read the frame!" << std::endl;
         return false;
     }
-    cv::imshow("Video Frame", frame);
     return true;
 }
 
-void playVideo(cv::VideoCapture &cap)
+void drawMatches(const FrameData &prevFrame, const FrameData &frame, const std::vector<cv::DMatch> &matches)
 {
-    while (displayFrame(cap)) {
-        cv::waitKey(1);
+    cv::drawKeypoints(frame.frame, frame.keypoints, frame.frame);
+    for (const auto &match : matches) {
+        cv::line(frame.frame, frame.keypoints[match.queryIdx].pt,
+                 prevFrame.keypoints[match.trainIdx].pt, cv::Scalar(0, 255, 0), 2);
     }
+    cv::imshow("Video", frame.frame);
 }
