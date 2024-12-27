@@ -14,7 +14,7 @@ find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
 
 # Add source files
-add_executable(slam src/main.cpp)
+add_executable(slam src/main.cpp src/video.cpp)
 
 # Link OpenCV libraries
 target_link_libraries(slam ${OpenCV_LIBS})
