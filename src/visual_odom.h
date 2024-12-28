@@ -17,3 +17,6 @@ std::vector<cv::DMatch> matchFeatures(const FrameData &prevFrame, const FrameDat
 
 // Estimates camera pose in homogenous 4D coords
 cv::Mat estimatePose(const FrameData &prevFrame, const FrameData &frame, const std::vector<cv::DMatch> &matches);
+
+// Triangulates 3D points from matches between two frames
+std::vector<cv::Point3f> triangulatePoints(const FrameData &prevFrame, const FrameData &frame, const std::vector<cv::DMatch> &matches);

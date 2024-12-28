@@ -15,6 +15,8 @@ int main()
         FrameData prevFrameData;
 
         std::vector<cv::Mat> cameraPoses;
+        std::vector<cv::Point3f> pointCloud;
+        nextFrame(cap, frame);
 
         auto start = std::chrono::high_resolution_clock::now();
 
@@ -22,7 +24,7 @@ int main()
             auto end = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
-            if (duration.count() > 100) {
+            if (duration.count() > 200) {
                 start = end;
                 nextFrame(cap, frame);
 
@@ -35,6 +37,9 @@ int main()
                     auto pose = estimatePose(prevFrameData, frameData, matches);
                     frameData.pose = pose;
                     cameraPoses.push_back(pose);
+
+                    auto points = triangulatePoints(prevFrameData, frameData, matches);
+                    pointCloud.insert(pointCloud.end(), points.begin(), points.end());
                 } else {
                     // Initial camera pose
                     frameData.pose = cv::Mat::eye(4, 4, CV_64F);
@@ -44,7 +49,7 @@ int main()
             }
 
             // Draw 3d scene
-            graphics.drawScene(cameraPoses);
+            graphics.drawScene(cameraPoses, pointCloud);
         }
 
         cap.release();

@@ -4,7 +4,7 @@
 Graphics::Graphics(int w, int h) : width(w), height(h) {
     cameraPos = glm::vec3(3.0f, 3.0f, 3.0f);
     cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
-    cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
+    cameraUp = glm::vec3(0.0f, -1.0f, 0.0f);
     yaw = -135.0f;
     pitch = -45.0f;
     firstMouse = true;
@@ -48,13 +48,9 @@ bool Graphics::isRunning() {
 void drawCamera() {
     // Drawn as square
     glBegin(GL_TRIANGLES);
-    glVertex3f(0.0f, 0.0f, 0.0f);
+    glVertex3f(-0.5f, 0.0f, 0.0f);
     glVertex3f(0.5f, 0.0f, 0.0f);
-    glVertex3f(0.5f, 0.5f, 0.0f);
-    glVertex3f(0.0f, 0.0f, 0.0f);
-    glVertex3f(0.0f, 0.5f, 0.0f);
-    glVertex3f(0.5f, 0.5f, 0.0f);
-    glVertex3f(0.0f, 0.0f, 0.0f);
+    glVertex3f(0.0f, 0.0f, 0.5f);
     glEnd();
 }
 
@@ -79,7 +75,16 @@ void drawCameraPoses(const std::vector<cv::Mat> &cameraPoses) {
     }
 }
 
-void Graphics::drawScene(const std::vector<cv::Mat> &cameraPoses) {
+void drawPointCloud(const std::vector<cv::Point3f> &pointCloud) {
+    glBegin(GL_POINTS);
+    glColor3f(1.0f, 1.0f, 1.0f);
+    for (const auto& point : pointCloud) {
+        glVertex3f(point.x, point.y, point.z);
+    }
+    glEnd();
+}
+
+void Graphics::drawScene(const std::vector<cv::Mat> &cameraPoses, const std::vector<cv::Point3f> &pointCloud) {
     processInput();
     
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -98,6 +103,7 @@ void Graphics::drawScene(const std::vector<cv::Mat> &cameraPoses) {
     
     drawAxes();
     drawCameraPoses(cameraPoses);
+    drawPointCloud(pointCloud);
 
     glfwSwapBuffers(window);
     glfwPollEvents();
@@ -124,7 +130,7 @@ void Graphics::drawAxes() {
 }
 
 void Graphics::processInput() {
-    const float cameraSpeed = 1.0f;
+    const float cameraSpeed = 0.1f;
     
     glm::vec3 right = glm::normalize(glm::cross(cameraFront, cameraUp));
     
@@ -194,8 +200,8 @@ void Graphics::mouseCallback(GLFWwindow* window, double xpos, double ypos) {
     }
     else if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
         // Rotate camera
-        graphics->yaw -= xoffset;
-        graphics->pitch -= yoffset;
+        graphics->yaw += xoffset;
+        graphics->pitch += yoffset;
         
         if (graphics->pitch > 89.0f)
             graphics->pitch = 89.0f;

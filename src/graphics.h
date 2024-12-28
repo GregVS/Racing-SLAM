@@ -11,7 +11,7 @@ public:
     ~Graphics();
     
     bool isRunning();
-    void drawScene(const std::vector<cv::Mat> &cameraPoses);
+    void drawScene(const std::vector<cv::Mat> &cameraPoses, const std::vector<cv::Point3f> &pointCloud);
     
 private:
     GLFWwindow* window;
