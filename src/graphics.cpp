@@ -75,16 +75,16 @@ void drawCameraPoses(const std::vector<cv::Mat> &cameraPoses) {
     }
 }
 
-void drawPointCloud(const std::vector<cv::Point3f> &pointCloud) {
+void drawPointCloud(const Map &map) {
     glBegin(GL_POINTS);
     glColor3f(1.0f, 1.0f, 1.0f);
-    for (const auto& point : pointCloud) {
-        glVertex3f(point.x, point.y, point.z);
+    for (const auto& [_, point] : map.getMapPoints()) {
+        glVertex3f(point.getPosition().x, point.getPosition().y, point.getPosition().z);
     }
     glEnd();
 }
 
-void Graphics::drawScene(const std::vector<cv::Mat> &cameraPoses, const std::vector<cv::Point3f> &pointCloud) {
+void Graphics::drawScene(const std::vector<cv::Mat> &cameraPoses, const Map &map) {
     processInput();
     
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -103,7 +103,7 @@ void Graphics::drawScene(const std::vector<cv::Mat> &cameraPoses, const std::vec
     
     drawAxes();
     drawCameraPoses(cameraPoses);
-    drawPointCloud(pointCloud);
+    drawPointCloud(map);
 
     glfwSwapBuffers(window);
     glfwPollEvents();

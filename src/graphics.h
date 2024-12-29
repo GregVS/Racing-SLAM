@@ -4,6 +4,7 @@
 #include <GL/glu.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include "visual_odom.h"
 
 class Graphics {
 public:
@@ -11,7 +12,7 @@ public:
     ~Graphics();
     
     bool isRunning();
-    void drawScene(const std::vector<cv::Mat> &cameraPoses, const std::vector<cv::Point3f> &pointCloud);
+    void drawScene(const std::vector<cv::Mat> &cameraPoses, const Map &map);
     
 private:
     GLFWwindow* window;

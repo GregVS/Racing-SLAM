@@ -13,6 +13,6 @@ find_package(glfw3 REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
 
 # Add source files
-add_executable(slam src/main.cpp src/video.cpp src/visual_odom.cpp src/graphics.cpp)
+add_executable(slam src/main.cpp src/video.cpp src/visual_odom.cpp src/graphics.cpp src/map.cpp)
 
 target_link_libraries(slam ${OpenCV_LIBS} OpenGL::GL OpenGL::GLU glfw glm::glm)

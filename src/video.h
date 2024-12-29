@@ -7,4 +7,5 @@ cv::VideoCapture initializeVideo(const std::string &videoPath);
 
 bool nextFrame(cv::VideoCapture &cap, cv::Mat &frame);
 
-void drawMatches(const FrameData &prevFrame, const FrameData &frame, const std::vector<cv::DMatch> &matches);
+void drawMatches(const Frame &prevFrame, const Frame &frame,
+                 const std::vector<cv::DMatch> &matches);

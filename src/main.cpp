@@ -1,3 +1,4 @@
+#include "map.h"
 #include "video.h"
 #include "visual_odom.h"
 #include "graphics.h"
@@ -11,12 +12,20 @@ int main()
 
         Graphics graphics(800, 600);
 
-        cv::Mat frame;
-        FrameData prevFrameData;
+        int W = 1920;
+        int H = 1080;
+        cv::Mat K = cv::Mat::eye(3, 3, CV_64F);
+        K.at<double>(0, 0) = 800;
+        K.at<double>(1, 1) = 800;
+        K.at<double>(0, 2) = W / 2;
+        K.at<double>(1, 2) = H / 2;
+
+        Camera camera{ K, W, H };
+        cv::Mat image;
 
         std::vector<cv::Mat> cameraPoses;
-        std::vector<cv::Point3f> pointCloud;
-        nextFrame(cap, frame);
+        Map map;
+        nextFrame(cap, image);
 
         auto start = std::chrono::high_resolution_clock::now();
 
@@ -26,30 +35,36 @@ int main()
 
             if (duration.count() > 200) {
                 start = end;
-                nextFrame(cap, frame);
+                nextFrame(cap, image);
 
                 // Process frame
-                FrameData frameData = extractFeatures(frame);
-                if (!prevFrameData.frame.empty()) {
-                    auto matches = matchFeatures(prevFrameData, frameData);
-                    drawMatches(prevFrameData, frameData, matches);
-
-                    auto pose = estimatePose(prevFrameData, frameData, matches);
-                    frameData.pose = pose;
-                    cameraPoses.push_back(pose);
-
-                    auto points = triangulatePoints(prevFrameData, frameData, matches);
-                    pointCloud.insert(pointCloud.end(), points.begin(), points.end());
-                } else {
-                    // Initial camera pose
-                    frameData.pose = cv::Mat::eye(4, 4, CV_64F);
+                if (map.getFrames().empty()) {
+                    Frame &frame = map.addFrame(extractFeatures(image, map.getNextFrameId()));
+                    frame.setPose(cv::Mat::eye(4, 4, CV_64F));
+                    cameraPoses.push_back(frame.getPose());
+                    continue;
                 }
-                prevFrameData = frameData;
+
+                Frame &prevFrame = map.getLastFrame();
+                Frame &frame = map.addFrame(extractFeatures(image, map.getNextFrameId()));
+
+                auto matches = matchFeatures(prevFrame, frame);
+                drawMatches(prevFrame, frame, matches);
+
+                auto pose = estimatePose(prevFrame, frame, matches);
+                frame.setPose(pose);
+                cameraPoses.push_back(pose);
+
+                matchMapPoints(map, frame, camera);
+                triangulatePoints(map, prevFrame, frame, matches);
+
+                std::cout << "Number of map points: " << map.getMapPoints().size() << std::endl;
+
                 cv::waitKey(1);
             }
 
             // Draw 3d scene
-            graphics.drawScene(cameraPoses, pointCloud);
+            graphics.drawScene(cameraPoses, map);
         }
 
         cap.release();
