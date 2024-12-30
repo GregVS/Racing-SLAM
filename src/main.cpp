@@ -1,4 +1,3 @@
-#include "map.h"
 #include "video.h"
 #include "visual_odom.h"
 #include "graphics.h"
@@ -24,7 +23,7 @@ int main()
         cv::Mat image;
 
         std::vector<cv::Mat> cameraPoses;
-        Map map;
+        Map map(camera);
         nextFrame(cap, image);
 
         auto start = std::chrono::high_resolution_clock::now();
@@ -51,11 +50,11 @@ int main()
                 auto matches = matchFeatures(prevFrame, frame);
                 drawMatches(prevFrame, frame, matches);
 
-                auto pose = estimatePose(prevFrame, frame, matches);
+                auto pose = estimatePose(prevFrame, frame, matches, K);
                 frame.setPose(pose);
                 cameraPoses.push_back(pose);
 
-                matchMapPoints(map, frame, camera);
+                matchMapPoints(map, frame);
                 triangulatePoints(map, prevFrame, frame, matches);
 
                 std::cout << "Number of map points: " << map.getMapPoints().size() << std::endl;

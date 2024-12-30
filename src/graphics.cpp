@@ -46,7 +46,6 @@ bool Graphics::isRunning() {
 }
 
 void drawCamera() {
-    // Drawn as square
     glBegin(GL_TRIANGLES);
     glVertex3f(-0.5f, 0.0f, 0.0f);
     glVertex3f(0.5f, 0.0f, 0.0f);

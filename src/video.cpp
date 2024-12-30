@@ -21,14 +21,12 @@ bool nextFrame(cv::VideoCapture &cap, cv::Mat &frame)
     return true;
 }
 
-void drawMatches(const Frame &prevFrame, const Frame &frame,
-                 const std::vector<cv::DMatch> &matches)
+void drawMatches(const Frame &prevFrame, const Frame &frame, const std::vector<cv::DMatch> &matches)
 {
     cv::Mat frameImage = frame.getImage();
     cv::drawKeypoints(frameImage, frame.getKeypoints(), frameImage);
     for (const auto &match : matches) {
-        cv::line(frameImage, frame.getKeypoint(match.queryIdx).pt,
-                 prevFrame.getKeypoint(match.trainIdx).pt,
+        cv::line(frameImage, frame.getKeypoint(match.queryIdx).pt, prevFrame.getKeypoint(match.trainIdx).pt,
                  cv::Scalar(0, 255, 0), 2);
     }
     cv::imshow("Video", frameImage);
