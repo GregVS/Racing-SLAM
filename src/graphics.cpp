@@ -2,11 +2,11 @@
 #include <iostream>
 
 Graphics::Graphics(int w, int h) : width(w), height(h) {
-    cameraPos = glm::vec3(3.0f, 3.0f, 3.0f);
+    cameraPos = glm::vec3(3.0f, 20.0f, 3.0f);
     cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
     cameraUp = glm::vec3(0.0f, -1.0f, 0.0f);
-    yaw = -135.0f;
-    pitch = -45.0f;
+    yaw = 90.0f;
+    pitch = -60.0f;
     firstMouse = true;
     lastX = width / 2.0f;
     lastY = height / 2.0f;

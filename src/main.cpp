@@ -1,10 +1,11 @@
 #include "video.h"
 #include "visual_odom.h"
 #include "graphics.h"
+#include "Features.h"
 
 int main()
 {
-    std::string videoPath = "snow_video.mp4";
+    std::string videoPath = "videos/snow_video.mp4";
 
     try {
         cv::VideoCapture cap = initializeVideo(videoPath);
@@ -48,14 +49,14 @@ int main()
                 Frame &frame = map.addFrame(extractFeatures(image, map.getNextFrameId()));
 
                 auto matches = matchFeatures(prevFrame, frame);
-                drawMatches(prevFrame, frame, matches);
+                auto poseEstimate = estimatePose(prevFrame, frame, camera, matches);
+                drawMatches(prevFrame, frame, poseEstimate.filteredMatches);
 
-                auto pose = estimatePose(prevFrame, frame, matches, K);
-                frame.setPose(pose);
-                cameraPoses.push_back(pose);
+                frame.setPose(poseEstimate.pose);
+                cameraPoses.push_back(poseEstimate.pose);
 
                 matchMapPoints(map, frame);
-                triangulatePoints(map, prevFrame, frame, matches);
+                triangulatePoints(map, prevFrame, frame, poseEstimate.filteredMatches);
 
                 std::cout << "Number of map points: " << map.getMapPoints().size() << std::endl;
 

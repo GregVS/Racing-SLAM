@@ -8,6 +8,12 @@ Frame::Frame(int id, const cv::Mat &image, const std::vector<cv::KeyPoint> &keyp
 {
     pose = cv::Mat::eye(4, 4, CV_64F);
     mapPoints.resize(keypoints.size(), nullptr);
+
+    std::vector<cv::Point2f> keypoints2f;
+    for (const auto &keypoint : keypoints) {
+        keypoints2f.push_back(keypoint.pt);
+    }
+    kdTree.build(keypoints2f);
 }
 
 bool Frame::hasCorrespondingMapPoint(int keypointIndex) const
@@ -53,6 +59,11 @@ const cv::KeyPoint &Frame::getKeypoint(int keypointIndex) const
 const cv::Mat &Frame::getPose() const
 {
     return pose;
+}
+
+std::vector<size_t> Frame::getKeypointsWithinRadius(const cv::Point2f &target, float radius) const
+{
+    return kdTree.radiusSearch(target, radius);
 }
 
 void Frame::setPose(const cv::Mat &pose)

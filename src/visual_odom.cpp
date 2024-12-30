@@ -1,58 +1,6 @@
 #include "visual_odom.h"
 #include <vector>
 
-Frame extractFeatures(const cv::Mat &image, int id)
-{
-    cv::Ptr<cv::ORB> orb = cv::ORB::create(2000);
-    std::vector<cv::KeyPoint> keypoints;
-    cv::Mat descriptors;
-    orb->detectAndCompute(image, cv::noArray(), keypoints, descriptors);
-
-    return Frame(id, image, keypoints, descriptors);
-}
-
-std::vector<cv::DMatch> matchFeatures(const Frame &prevFrame, const Frame &frame)
-{
-    auto matcher = cv::BFMatcher::create(cv::NORM_HAMMING);
-    std::vector<std::vector<cv::DMatch> > knn_matches;
-    matcher->knnMatch(frame.getDescriptors(), prevFrame.getDescriptors(), knn_matches, 2);
-
-    std::vector<cv::DMatch> good_matches;
-    for (const auto &match : knn_matches) {
-        // Ratio test
-        if (match[0].distance < 0.75 * match[1].distance && match[0].distance < 32) {
-            good_matches.push_back(match[0]);
-        }
-    }
-
-    std::cout << "Number of matches: " << good_matches.size() << std::endl;
-
-    return good_matches;
-}
-
-cv::Mat estimatePose(const Frame &prevFrame, const Frame &frame, const std::vector<cv::DMatch> &matches, const cv::Mat &K)
-{
-    // Keypoints based on matches
-    std::vector<cv::Point2f> fromPoints, toPoints;
-    for (const auto &match : matches) {
-        fromPoints.push_back(prevFrame.getKeypoint(match.trainIdx).pt);
-        toPoints.push_back(frame.getKeypoint(match.queryIdx).pt);
-    }
-
-    // Essential matrix and pose estimation
-    cv::Mat E = cv::findEssentialMat(fromPoints, toPoints, K, cv::RANSAC);
-    cv::Mat R, t;
-    cv::recoverPose(E, fromPoints, toPoints, K, R, t);
-
-    cv::Mat pose = cv::Mat::eye(4, 4, CV_64F);
-    R.copyTo(pose(cv::Rect(0, 0, 3, 3)));
-    t.copyTo(pose(cv::Rect(3, 0, 1, 3)));
-
-    cv::Mat camera_pose = prevFrame.getPose() * pose.inv();
-
-    return camera_pose;
-}
-
 void matchMapPoints(Map &map, Frame &frame)
 {
     int matches = 0;
@@ -69,20 +17,20 @@ void matchMapPoints(Map &map, Frame &frame)
 
         // Check if point is in frame
         auto point2D = cv::Point2f(pointInFrame.at<double>(0, 0), pointInFrame.at<double>(1, 0));
-        if (point2D.x < 0 || point2D.x > map.getCamera().getWidth() || point2D.y < 0 || point2D.y > map.getCamera().getHeight()) {
+        if (point2D.x < 0 || point2D.x > map.getCamera().getWidth() || point2D.y < 0 ||
+            point2D.y > map.getCamera().getHeight()) {
             continue;
         }
 
         // Find a match
-        for (int i = 0; i < frame.getKeypoints().size(); i++) {
-            if (cv::norm(frame.getKeypoint(i).pt - point2D) < 10) {
-                float orbDist = point.orbDistance(frame.getDescriptor(i));
-                if (orbDist < 32) {
-                    point.addObservation(&frame, i);
-                    frame.setCorrespondingMapPoint(i, &point);
-                    matches++;
-                    break;
-                }
+        auto indices = frame.getKeypointsWithinRadius(point2D, 10.0f);
+        for (const auto index : indices) {
+            float orbDist = point.orbDistance(frame.getDescriptor(index));
+            if (orbDist < 32) {
+                point.addObservation(&frame, index);
+                frame.setCorrespondingMapPoint(index, &point);
+                matches++;
+                break;
             }
         }
     }

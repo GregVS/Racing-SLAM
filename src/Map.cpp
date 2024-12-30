@@ -5,9 +5,9 @@ Map::Map(const Camera &camera)
 {
 }
 
-Frame &Map::addFrame(const Frame &frame)
+Frame &Map::addFrame(Frame &&frame)
 {
-    frames.push_back(std::make_unique<Frame>(frame));
+    frames.push_back(std::make_unique<Frame>(std::move(frame)));
     return *frames.back();
 }
 

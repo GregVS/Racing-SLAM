@@ -14,7 +14,7 @@ class Map {
 public:
     Map(const Camera &camera);
 
-    Frame &addFrame(const Frame &frame);
+    Frame &addFrame(Frame &&frame);
 
     Frame &getLastFrame();
 
