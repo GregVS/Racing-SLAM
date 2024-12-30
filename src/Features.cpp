@@ -1,20 +1,20 @@
 #include "Features.h"
+#include <unordered_set>
 
 Frame extractFeatures(const cv::Mat &image, int id)
 {
     cv::Mat gray;
     cv::cvtColor(image, gray, cv::COLOR_BGR2GRAY);
     std::vector<cv::Point2f> corners;
-    cv::goodFeaturesToTrack(gray, corners, 3000, 0.01, 10);
+    cv::goodFeaturesToTrack(gray, corners, 3000, 0.01, 8);
 
-    cv::Ptr<cv::ORB> orb = cv::ORB::create(1000);
+    cv::Ptr<cv::ORB> orb = cv::ORB::create();
     std::vector<cv::KeyPoint> keypoints;
     for (const auto &corner : corners) {
         keypoints.push_back(cv::KeyPoint(corner, 20.0f));
     }
 
     cv::Mat descriptors;
-    // orb->detectAndCompute(image, cv::noArray(), keypoints, descriptors);
     orb->compute(image, keypoints, descriptors);
 
     return Frame(id, image, keypoints, descriptors);
@@ -26,21 +26,28 @@ std::vector<cv::DMatch> matchFeatures(const Frame &prevFrame, const Frame &frame
     std::vector<std::vector<cv::DMatch> > knn_matches;
     matcher->knnMatch(frame.getDescriptors(), prevFrame.getDescriptors(), knn_matches, 2);
 
+    std::unordered_set<int> matchedKeypoints;
+
     std::vector<cv::DMatch> good_matches;
     for (const auto &match : knn_matches) {
         // Ratio test
+        if (matchedKeypoints.find(match[0].queryIdx) != matchedKeypoints.end() ||
+            matchedKeypoints.find(match[0].trainIdx) != matchedKeypoints.end()) {
+            continue;
+        }
+
         if (match[0].distance < 0.75 * match[1].distance && match[0].distance < 32) {
             good_matches.push_back(match[0]);
+            matchedKeypoints.insert(match[0].queryIdx);
+            matchedKeypoints.insert(match[0].trainIdx);
         }
     }
-
-    std::cout << "Number of matches: " << good_matches.size() << std::endl;
 
     return good_matches;
 }
 
 PoseEstimate estimatePose(const Frame &prevFrame, const Frame &frame, const Camera &camera,
-                  const std::vector<cv::DMatch> &matches)
+                          const std::vector<cv::DMatch> &matches)
 {
     // Keypoints based on matches
     std::vector<cv::Point2f> fromPoints, toPoints;
@@ -63,6 +70,7 @@ PoseEstimate estimatePose(const Frame &prevFrame, const Frame &frame, const Came
         }
         filteredMatches.push_back(matches[i]);
     }
+    std::cout << "Number of matches: " << filteredMatches.size() << std::endl;
 
     cv::recoverPose(E, fromPoints, toPoints, camera.getIntrinsicMatrix(), R, t, inliers);
 

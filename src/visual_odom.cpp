@@ -23,8 +23,12 @@ void matchMapPoints(Map &map, Frame &frame)
         }
 
         // Find a match
-        auto indices = frame.getKeypointsWithinRadius(point2D, 10.0f);
+        auto indices = frame.getKeypointsWithinRadius(point2D, 2.0f);
         for (const auto index : indices) {
+            if (point.isObservedBy(&frame)) {
+                continue;
+            }
+
             float orbDist = point.orbDistance(frame.getDescriptor(index));
             if (orbDist < 32) {
                 point.addObservation(&frame, index);
@@ -94,8 +98,8 @@ void triangulatePoints(Map &map, Frame &prevFrame, Frame &frame, const std::vect
         reprojection_errors.push_back(cv::norm(reprojection2 - frame.getKeypoint(matches[i].queryIdx).pt));
 
         auto &mapPoint = map.addMapPoint(point3D);
-        mapPoint.addObservation(&frame, frameKeypointIndices[i]);
         mapPoint.addObservation(&prevFrame, prevFrameKeypointIndices[i]);
+        mapPoint.addObservation(&frame, frameKeypointIndices[i]);
         frame.setCorrespondingMapPoint(frameKeypointIndices[i], &mapPoint);
         prevFrame.setCorrespondingMapPoint(prevFrameKeypointIndices[i], &mapPoint);
         addedPoints++;

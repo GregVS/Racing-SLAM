@@ -5,7 +5,7 @@
 
 int main()
 {
-    std::string videoPath = "videos/snow_video.mp4";
+    std::string videoPath = "videos/highway.mp4";
 
     try {
         cv::VideoCapture cap = initializeVideo(videoPath);
@@ -21,11 +21,9 @@ int main()
         K.at<double>(1, 2) = H / 2;
 
         Camera camera{ K, W, H };
-        cv::Mat image;
 
         std::vector<cv::Mat> cameraPoses;
         Map map(camera);
-        nextFrame(cap, image);
 
         auto start = std::chrono::high_resolution_clock::now();
 
@@ -35,7 +33,7 @@ int main()
 
             if (duration.count() > 200) {
                 start = end;
-                nextFrame(cap, image);
+                cv::Mat image = nextFrame(cap);
 
                 // Process frame
                 if (map.getFrames().empty()) {

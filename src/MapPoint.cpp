@@ -10,9 +10,8 @@ MapPoint::MapPoint(int id, cv::Point3f position)
 float MapPoint::orbDistance(cv::Mat descriptor) const
 {
     float minDist = std::numeric_limits<float>::max();
-    for (int i = 0; i < observationFrames.size(); i++) {
-        int keypointIndex = observationKeypointIndices[i];
-        float dist = cv::norm(observationFrames[i]->getDescriptor(keypointIndex), descriptor, cv::NORM_HAMMING);
+    for (const auto &[frame, keypointIndex] : observations) {
+        float dist = cv::norm(frame->getDescriptor(keypointIndex), descriptor, cv::NORM_HAMMING);
         if (dist < minDist) {
             minDist = dist;
         }
@@ -22,8 +21,7 @@ float MapPoint::orbDistance(cv::Mat descriptor) const
 
 void MapPoint::addObservation(Frame *frame, int keypointIndex)
 {
-    observationFrames.push_back(frame);
-    observationKeypointIndices.push_back(keypointIndex);
+    observations.insert(std::make_pair(frame, keypointIndex));
 }
 
 int MapPoint::getId() const
@@ -34,4 +32,14 @@ int MapPoint::getId() const
 const cv::Point3f &MapPoint::getPosition() const
 {
     return position;
+}
+
+const std::unordered_map<Frame *, int> &MapPoint::getObservations() const
+{
+    return observations;
+}
+
+bool MapPoint::isObservedBy(Frame *frame) const
+{
+    return observations.find(frame) != observations.end();
 }

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <opencv2/opencv.hpp>
-#include <vector>
+#include <unordered_map>
 
 class Frame;
 
@@ -17,9 +17,12 @@ public:
 
     const cv::Point3f &getPosition() const;
 
+    const std::unordered_map<Frame *, int> &getObservations() const;
+
+    bool isObservedBy(Frame *frame) const;
+
 private:
     const int id;
     const cv::Point3f position;
-    std::vector<Frame *> observationFrames;
-    std::vector<int> observationKeypointIndices;
+    std::unordered_map<Frame *, int> observations;
 };
