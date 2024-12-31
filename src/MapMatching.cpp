@@ -1,0 +1,115 @@
+#include "MapMatching.h"
+#include "Camera.h"
+#include <vector>
+
+namespace slam
+{
+
+void match_map_points(Map &map, Frame &frame)
+{
+    int matches = 0;
+    for (auto &[_, point] : map.get_map_points()) {
+        auto point2D = map.get_camera().to_image_coordinates(point.get_position(), frame.get_pose());
+
+        // Check if point is in frame
+        if (!within_frame(point2D, map.get_camera())) {
+            continue;
+        }
+
+        // Find a match
+        auto keypoint_indices = frame.get_keypoints_within_radius(point2D, 2.0f);
+        for (const auto keypoint : keypoint_indices) {
+            if (point.is_observed_by(&frame)) {
+                continue;
+            }
+
+            float orbDist = map_point_orb_distance(point, frame.get_descriptor(keypoint));
+            if (orbDist < 32) {
+                point.add_observation(&frame, keypoint);
+                frame.set_corresponding_map_point(keypoint, &point);
+                matches++;
+                break;
+            }
+        }
+    }
+
+    std::cout << "Matches: " << matches << std::endl;
+}
+
+void piggyback_prev_frame_matches(Map &map, const Frame &prev_frame, Frame &frame, const std::vector<cv::DMatch> &matches)
+{
+    for (const auto &match : matches) {
+        if (frame.get_corresponding_map_point(match.queryIdx)) {
+            continue;
+        }
+
+        MapPoint *mapPoint = prev_frame.get_corresponding_map_point(match.trainIdx);
+        if (mapPoint) {
+            mapPoint->add_observation(&frame, match.queryIdx);
+            frame.set_corresponding_map_point(match.queryIdx, mapPoint);
+        }
+    }
+}
+
+void triangulate_points(Map &map, Frame &prev_frame, Frame &frame, const std::vector<cv::DMatch> &matches)
+{
+    std::vector<cv::Point2f> from_points, to_points;
+    std::vector<int> frame_keypoint_indices;
+    std::vector<int> prev_frame_keypoint_indices;
+    for (const auto &match : matches) {
+        if (prev_frame.get_corresponding_map_point(match.trainIdx) ||
+            frame.get_corresponding_map_point(match.queryIdx)) {
+            continue;
+        }
+
+        from_points.push_back(prev_frame.get_keypoint(match.trainIdx).pt);
+        to_points.push_back(frame.get_keypoint(match.queryIdx).pt);
+        frame_keypoint_indices.push_back(match.queryIdx);
+        prev_frame_keypoint_indices.push_back(match.trainIdx);
+    }
+
+    // Compute the projection matrices
+    cv::Mat P1 = map.get_camera().get_projection_matrix(prev_frame.get_pose());
+    cv::Mat P2 = map.get_camera().get_projection_matrix(frame.get_pose());
+
+    // Triangulate
+    cv::Mat points4D;
+    cv::triangulatePoints(P1, P2, from_points, to_points, points4D);
+
+    // Convert the points to 3D and compute reprojection errors
+    int addedPoints = 0;
+    std::vector<float> reprojection_errors;
+
+    for (int i = 0; i < points4D.cols; i++) {
+        cv::Point3f point3D;
+        point3D.x = points4D.at<float>(0, i) / points4D.at<float>(3, i);
+        point3D.y = points4D.at<float>(1, i) / points4D.at<float>(3, i);
+        point3D.z = points4D.at<float>(2, i) / points4D.at<float>(3, i);
+
+        // Check if point is in front of camera
+        auto point_in_camera_1 = map.get_camera().to_camera_coordinates(point3D, prev_frame.get_pose());
+        auto point_in_camera_2 = map.get_camera().to_camera_coordinates(point3D, frame.get_pose());
+        if (point_in_camera_1.z < 0 || point_in_camera_2.z < 0) {
+            continue;
+        }
+
+        // Compute reprojection errors
+        auto reprojection1 = map.get_camera().to_image_coordinates(point3D, prev_frame.get_pose());
+        auto reprojection2 = map.get_camera().to_image_coordinates(point3D, frame.get_pose());
+
+        reprojection_errors.push_back(cv::norm(reprojection1 - prev_frame.get_keypoint(matches[i].trainIdx).pt));
+        reprojection_errors.push_back(cv::norm(reprojection2 - frame.get_keypoint(matches[i].queryIdx).pt));
+
+        auto &mapPoint = map.add_map_point(point3D);
+        mapPoint.add_observation(&prev_frame, prev_frame_keypoint_indices[i]);
+        prev_frame.set_corresponding_map_point(prev_frame_keypoint_indices[i], &mapPoint);
+        mapPoint.add_observation(&frame, frame_keypoint_indices[i]);
+        frame.set_corresponding_map_point(frame_keypoint_indices[i], &mapPoint);
+        addedPoints++;
+    }
+
+    std::cout << "Reprojection error: " << cv::mean(reprojection_errors)[0] << std::endl;
+    std::cout << "New points: " << addedPoints << std::endl;
+}
+
+};

@@ -1,16 +1,18 @@
-#include "video.h"
-#include "visual_odom.h"
-#include "graphics.h"
 #include "Features.h"
+#include "VideoDisplay.h"
+#include "Graphics.h"
+#include "MapMatching.h"
+#include "Map.h"
+#include "Frame.h"
 
 int main()
 {
     std::string videoPath = "videos/highway.mp4";
 
     try {
-        cv::VideoCapture cap = initializeVideo(videoPath);
+        cv::VideoCapture cap = slam::init_video(videoPath);
 
-        Graphics graphics(800, 600);
+        slam::Graphics graphics(800, 600);
 
         int W = 1920;
         int H = 1080;
@@ -20,49 +22,50 @@ int main()
         K.at<double>(0, 2) = W / 2;
         K.at<double>(1, 2) = H / 2;
 
-        Camera camera{ K, W, H };
+        slam::Camera camera{ K, W, H };
 
         std::vector<cv::Mat> cameraPoses;
-        Map map(camera);
+        slam::Map map(camera);
 
         auto start = std::chrono::high_resolution_clock::now();
 
-        while (graphics.isRunning()) {
+        while (graphics.is_running()) {
             auto end = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
             if (duration.count() > 200) {
                 start = end;
-                cv::Mat image = nextFrame(cap);
+                cv::Mat image = slam::next_frame(cap);
 
                 // Process frame
-                if (map.getFrames().empty()) {
-                    Frame &frame = map.addFrame(extractFeatures(image, map.getNextFrameId()));
-                    frame.setPose(cv::Mat::eye(4, 4, CV_64F));
-                    cameraPoses.push_back(frame.getPose());
+                if (map.get_frames().empty()) {
+                    slam::Frame &frame = map.add_frame(slam::extract_features(image, map.get_next_frame_id()));
+                    frame.set_pose(cv::Mat::eye(4, 4, CV_64F));
+                    cameraPoses.push_back(frame.get_pose());
                     continue;
                 }
 
-                Frame &prevFrame = map.getLastFrame();
-                Frame &frame = map.addFrame(extractFeatures(image, map.getNextFrameId()));
+                slam::Frame &prevFrame = map.get_last_frame();
+                slam::Frame &frame = map.add_frame(slam::extract_features(image, map.get_next_frame_id()));
 
-                auto matches = matchFeatures(prevFrame, frame);
-                auto poseEstimate = estimatePose(prevFrame, frame, camera, matches);
-                drawMatches(prevFrame, frame, poseEstimate.filteredMatches);
+                auto matches = slam::match_features(prevFrame, frame);
+                auto poseEstimate = slam::estimate_pose(prevFrame, frame, camera, matches);
+                slam::draw_matches(prevFrame, frame, poseEstimate.filteredMatches);
 
-                frame.setPose(poseEstimate.pose);
+                frame.set_pose(poseEstimate.pose);
                 cameraPoses.push_back(poseEstimate.pose);
 
-                matchMapPoints(map, frame);
-                triangulatePoints(map, prevFrame, frame, poseEstimate.filteredMatches);
+                slam::piggyback_prev_frame_matches(map, prevFrame, frame, poseEstimate.filteredMatches);
+                slam::match_map_points(map, frame);
+                slam::triangulate_points(map, prevFrame, frame, poseEstimate.filteredMatches);
 
-                std::cout << "Number of map points: " << map.getMapPoints().size() << std::endl;
+                std::cout << "Number of map points: " << map.get_map_points().size() << std::endl;
 
                 cv::waitKey(1);
             }
 
             // Draw 3d scene
-            graphics.drawScene(cameraPoses, map);
+            graphics.draw_scene(cameraPoses, map);
         }
 
         cap.release();

@@ -3,16 +3,18 @@
 #include "KDTree.h"
 #include <iostream>
 
+namespace slam {
+
 KDTree2D::KDTree2D() : root(nullptr) {}
 
 KDTree2D::~KDTree2D() {
-    deleteTree(root);
+    delete_tree(root);
 }
 
-void KDTree2D::deleteTree(Node* node) {
+void KDTree2D::delete_tree(Node* node) {
     if (node) {
-        deleteTree(node->left);
-        deleteTree(node->right);
+        delete_tree(node->left);
+        delete_tree(node->right);
         delete node;
     }
 }
@@ -23,10 +25,10 @@ void KDTree2D::build(const std::vector<cv::Point2f>& inputPoints) {
     for (size_t i = 0; i < indices.size(); i++) {
         indices[i] = i;
     }
-    root = buildTree(indices, 0, 0, points.size());
+    root = build_tree(indices, 0, 0, points.size());
 }
 
-KDTree2D::Node* KDTree2D::buildTree(std::vector<size_t>& indices, int depth, 
+KDTree2D::Node* KDTree2D::build_tree(std::vector<size_t>& indices, int depth, 
                                    int start, int end) {
     if (start >= end) return nullptr;
 
@@ -45,19 +47,19 @@ KDTree2D::Node* KDTree2D::buildTree(std::vector<size_t>& indices, int depth,
                     });
 
     Node* node = new Node(points[indices[mid]], indices[mid]);
-    node->left = buildTree(indices, depth + 1, start, mid);
-    node->right = buildTree(indices, depth + 1, mid + 1, end);
+    node->left = build_tree(indices, depth + 1, start, mid);
+    node->right = build_tree(indices, depth + 1, mid + 1, end);
     return node;
 }
 
-std::vector<size_t> KDTree2D::radiusSearch(const cv::Point2f& target, float radius) const {
+std::vector<size_t> KDTree2D::radius_search(const cv::Point2f& target, float radius) const {
     std::vector<size_t> result;
-    radiusSearchHelper(root, target, radius * radius, result, 0);
+    radius_search_helper(root, target, radius * radius, result, 0);
     return result;
 }
 
-void KDTree2D::radiusSearchHelper(Node* node, const cv::Point2f& target, 
-                                float squaredRadius, std::vector<size_t>& result, 
+void KDTree2D::radius_search_helper(Node* node, const cv::Point2f& target, 
+                                float squared_radius, std::vector<size_t>& result, 
                                 int depth) const {
     if (!node) return;
 
@@ -65,7 +67,7 @@ void KDTree2D::radiusSearchHelper(Node* node, const cv::Point2f& target,
     float dy = node->point.y - target.y;
     float dist_squared = dx * dx + dy * dy;
 
-    if (dist_squared <= squaredRadius) {
+    if (dist_squared <= squared_radius) {
         result.push_back(node->index);
     }
 
@@ -73,13 +75,15 @@ void KDTree2D::radiusSearchHelper(Node* node, const cv::Point2f& target,
     float delta = (axis == 0) ? dx : dy;
 
     // Always traverse the side of the split that contains the target point
-    Node* nearChild = (delta > 0) ? node->left : node->right;
-    Node* farChild = (delta > 0) ? node->right : node->left;
+    Node* near_child = (delta > 0) ? node->left : node->right;
+    Node* far_child = (delta > 0) ? node->right : node->left;
 
-    radiusSearchHelper(nearChild, target, squaredRadius, result, depth + 1);
+    radius_search_helper(near_child, target, squared_radius, result, depth + 1);
 
     // Only traverse the other side if it could contain points within the radius
-    if (delta * delta <= squaredRadius) {
-        radiusSearchHelper(farChild, target, squaredRadius, result, depth + 1);
+    if (delta * delta <= squared_radius) {
+        radius_search_helper(far_child, target, squared_radius, result, depth + 1);
     }
 }
+
+};

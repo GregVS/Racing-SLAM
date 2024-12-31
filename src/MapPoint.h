@@ -2,27 +2,41 @@
 
 #include <opencv2/opencv.hpp>
 #include <unordered_map>
+#include <vector>
+#include <functional>
+
+namespace slam
+{
 
 class Frame;
 
-class MapPoint {
+class MapPoint
+{
 public:
     MapPoint(int id, cv::Point3f position);
 
-    float orbDistance(cv::Mat descriptor) const;
+    void add_observation(Frame *frame, int keypointIndex);
 
-    void addObservation(Frame *frame, int keypointIndex);
+    int get_id() const;
 
-    int getId() const;
+    const cv::Point3f &get_position() const;
 
-    const cv::Point3f &getPosition() const;
+    bool is_observed_by(Frame *frame) const;
 
-    const std::unordered_map<Frame *, int> &getObservations() const;
+    using ObservationData = std::pair<Frame*, int>;
 
-    bool isObservedBy(Frame *frame) const;
+    std::vector<ObservationData> get_observations_vector() const;
+    
+    void for_each_observation(const std::function<void(Frame*, int)>& callback) const;
+
+    size_t observation_count() const;
 
 private:
-    const int id;
-    const cv::Point3f position;
-    std::unordered_map<Frame *, int> observations;
+    const int m_id;
+    const cv::Point3f m_position;
+    std::unordered_map<Frame *, int> m_observations;
+};
+
+float map_point_orb_distance(const MapPoint &map_point, const cv::Mat &descriptor);
+
 };

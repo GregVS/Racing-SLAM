@@ -1,77 +1,76 @@
 #include "Frame.h"
 
+namespace slam {
+
 Frame::Frame(int id, const cv::Mat &image, const std::vector<cv::KeyPoint> &keypoints, const cv::Mat &descriptors)
-        : id(id)
-        , image(image)
-        , keypoints(keypoints)
-        , descriptors(descriptors)
+        : m_id(id)
+        , m_image(image)
+        , m_keypoints(keypoints)
+        , m_descriptors(descriptors)
 {
-    pose = cv::Mat::eye(4, 4, CV_64F);
-    mapPoints.resize(keypoints.size(), nullptr);
+    m_pose = cv::Mat::eye(4, 4, CV_64F);
+    m_map_points.resize(keypoints.size(), nullptr);
 
     std::vector<cv::Point2f> keypoints2f;
     for (const auto &keypoint : keypoints) {
         keypoints2f.push_back(keypoint.pt);
     }
-    kdTree.build(keypoints2f);
+    m_kd_tree.build(keypoints2f);
 }
 
-bool Frame::hasCorrespondingMapPoint(int keypointIndex) const
+MapPoint *Frame::get_corresponding_map_point(int keypoint_index) const
 {
-    return mapPoints[keypointIndex] != nullptr;
+    return m_map_points[keypoint_index];
 }
 
-MapPoint *Frame::getCorrespondingMapPoint(int keypointIndex) const
+void Frame::set_corresponding_map_point(int keypoint_index, MapPoint *map_point)
 {
-    return mapPoints[keypointIndex];
+    m_map_points[keypoint_index] = map_point;
 }
 
-void Frame::setCorrespondingMapPoint(int keypointIndex, MapPoint *mapPoint)
+cv::Mat Frame::get_descriptor(int keypoint_index) const
 {
-    mapPoints[keypointIndex] = mapPoint;
+    return m_descriptors.row(keypoint_index);
 }
 
-cv::Mat Frame::getDescriptor(int keypointIndex) const
+const cv::Mat &Frame::get_descriptors() const
 {
-    return descriptors.row(keypointIndex);
+    return m_descriptors;
 }
 
-const cv::Mat &Frame::getDescriptors() const
+const cv::Mat &Frame::get_image() const
 {
-    return descriptors;
+    return m_image;
 }
 
-const cv::Mat &Frame::getImage() const
+const std::vector<cv::KeyPoint> &Frame::get_keypoints() const
 {
-    return image;
+    return m_keypoints;
 }
 
-const std::vector<cv::KeyPoint> &Frame::getKeypoints() const
+const cv::KeyPoint &Frame::get_keypoint(int keypoint_index) const
 {
-    return keypoints;
+    return m_keypoints[keypoint_index];
 }
 
-const cv::KeyPoint &Frame::getKeypoint(int keypointIndex) const
+const cv::Mat &Frame::get_pose() const
 {
-    return keypoints[keypointIndex];
+    return m_pose;
 }
 
-const cv::Mat &Frame::getPose() const
+std::vector<size_t> Frame::get_keypoints_within_radius(const cv::Point2f &target, float radius) const
 {
-    return pose;
+    return m_kd_tree.radius_search(target, radius);
 }
 
-std::vector<size_t> Frame::getKeypointsWithinRadius(const cv::Point2f &target, float radius) const
+void Frame::set_pose(const cv::Mat &pose)
 {
-    return kdTree.radiusSearch(target, radius);
+    m_pose = pose;
 }
 
-void Frame::setPose(const cv::Mat &pose)
+int Frame::get_id() const
 {
-    this->pose = pose;
+    return m_id;
 }
 
-int Frame::getId() const
-{
-    return id;
-}
+};

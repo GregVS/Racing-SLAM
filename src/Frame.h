@@ -5,6 +5,10 @@
 
 #include "MapPoint.h"
 #include "KDTree.h"
+
+namespace slam
+{
+
 class Frame {
 public:
     Frame(int id, const cv::Mat &image, const std::vector<cv::KeyPoint> &keypoints, const cv::Mat &descriptors);
@@ -13,38 +17,38 @@ public:
 
     Frame(Frame &&other) noexcept = default;
 
-    bool hasCorrespondingMapPoint(int keypointIndex) const;
+    MapPoint *get_corresponding_map_point(int keypoint_index) const;
 
-    MapPoint *getCorrespondingMapPoint(int keypointIndex) const;
+    void set_corresponding_map_point(int keypoint_index, MapPoint *map_point);
 
-    void setCorrespondingMapPoint(int keypointIndex, MapPoint *mapPoint);
+    cv::Mat get_descriptor(int keypoint_index) const;
 
-    cv::Mat getDescriptor(int keypointIndex) const;
+    const cv::Mat &get_descriptors() const;
 
-    const cv::Mat &getDescriptors() const;
+    const cv::Mat &get_image() const;
 
-    const cv::Mat &getImage() const;
+    const std::vector<cv::KeyPoint> &get_keypoints() const;
 
-    const std::vector<cv::KeyPoint> &getKeypoints() const;
+    const cv::KeyPoint &get_keypoint(int keypoint_index) const;
 
-    const cv::KeyPoint &getKeypoint(int keypointIndex) const;
+    const cv::Mat &get_pose() const;
 
-    const cv::Mat &getPose() const;
+    std::vector<size_t> get_keypoints_within_radius(const cv::Point2f &target, float radius) const;
 
-    std::vector<size_t> getKeypointsWithinRadius(const cv::Point2f &target, float radius) const;
+    void set_pose(const cv::Mat &pose);
 
-    void setPose(const cv::Mat &pose);
-
-    int getId() const;
+    int get_id() const;
 
 private:
-    const int id;
-    const cv::Mat image;
+    const int m_id;
+    const cv::Mat m_image;
 
-    const std::vector<cv::KeyPoint> keypoints;
-    cv::Mat descriptors;
-    KDTree2D kdTree;
+    const std::vector<cv::KeyPoint> m_keypoints;
+    cv::Mat m_descriptors;
+    KDTree2D m_kd_tree;
 
-    cv::Mat pose;
-    std::vector<MapPoint *> mapPoints;
+    cv::Mat m_pose;
+    std::vector<MapPoint *> m_map_points;
+};
+
 };

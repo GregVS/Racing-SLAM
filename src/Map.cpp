@@ -1,55 +1,60 @@
 #include "Map.h"
 
+namespace slam
+{
+
 Map::Map(const Camera &camera)
-    : camera(camera)
+        : m_camera(camera)
 {
 }
 
-Frame &Map::addFrame(Frame &&frame)
+Frame &Map::add_frame(Frame &&frame)
 {
-    frames.push_back(std::make_unique<Frame>(std::move(frame)));
-    return *frames.back();
+    m_frames.push_back(std::make_unique<Frame>(std::move(frame)));
+    return *m_frames.back();
 }
 
-const std::vector<std::unique_ptr<Frame> > &Map::getFrames() const
+const std::vector<std::unique_ptr<Frame> > &Map::get_frames() const
 {
-    return frames;
+    return m_frames;
 }
 
-MapPoint &Map::getMapPoint(int id)
+MapPoint &Map::get_map_point(int id)
 {
-    return points.at(id);
+    return m_points.at(id);
 }
 
-MapPoint &Map::addMapPoint(cv::Point3f position)
+MapPoint &Map::add_map_point(cv::Point3f position)
 {
-    int id = nextPointId;
-    points.insert({ id, MapPoint(id, position) });
-    nextPointId++;
-    return points.at(id);
+    int id = m_next_point_id;
+    m_points.insert({ id, MapPoint(id, position) });
+    m_next_point_id++;
+    return m_points.at(id);
 }
 
-int Map::getNextFrameId() const
+int Map::get_next_frame_id() const
 {
-    return frames.size();
+    return m_frames.size();
 }
 
-Frame &Map::getLastFrame()
+Frame &Map::get_last_frame()
 {
-    return *frames.back();
+    return *m_frames.back();
 }
 
-std::unordered_map<int, MapPoint> &Map::getMapPoints()
+std::unordered_map<int, MapPoint> &Map::get_map_points()
 {
-    return points;
+    return m_points;
 }
 
-const std::unordered_map<int, MapPoint> &Map::getMapPoints() const
+const std::unordered_map<int, MapPoint> &Map::get_map_points() const
 {
-    return points;
+    return m_points;
 }
 
-const Camera &Map::getCamera() const
+const Camera &Map::get_camera() const
 {
-    return camera;
+    return m_camera;
 }
+
+};

@@ -1,7 +1,10 @@
 #include "Features.h"
 #include <unordered_set>
 
-Frame extractFeatures(const cv::Mat &image, int id)
+namespace slam
+{
+
+Frame extract_features(const cv::Mat &image, int id)
 {
     cv::Mat gray;
     cv::cvtColor(image, gray, cv::COLOR_BGR2GRAY);
@@ -20,11 +23,11 @@ Frame extractFeatures(const cv::Mat &image, int id)
     return Frame(id, image, keypoints, descriptors);
 }
 
-std::vector<cv::DMatch> matchFeatures(const Frame &prevFrame, const Frame &frame)
+std::vector<cv::DMatch> match_features(const Frame &prevFrame, const Frame &frame)
 {
     auto matcher = cv::BFMatcher::create(cv::NORM_HAMMING);
     std::vector<std::vector<cv::DMatch> > knn_matches;
-    matcher->knnMatch(frame.getDescriptors(), prevFrame.getDescriptors(), knn_matches, 2);
+    matcher->knnMatch(frame.get_descriptors(), prevFrame.get_descriptors(), knn_matches, 2);
 
     std::unordered_set<int> matchedKeypoints;
 
@@ -46,20 +49,20 @@ std::vector<cv::DMatch> matchFeatures(const Frame &prevFrame, const Frame &frame
     return good_matches;
 }
 
-PoseEstimate estimatePose(const Frame &prevFrame, const Frame &frame, const Camera &camera,
-                          const std::vector<cv::DMatch> &matches)
+PoseEstimate estimate_pose(const Frame &prev_frame, const Frame &frame, const Camera &camera,
+                           const std::vector<cv::DMatch> &matches)
 {
     // Keypoints based on matches
-    std::vector<cv::Point2f> fromPoints, toPoints;
+    std::vector<cv::Point2f> from_points, to_points;
     for (const auto &match : matches) {
-        fromPoints.push_back(prevFrame.getKeypoint(match.trainIdx).pt);
-        toPoints.push_back(frame.getKeypoint(match.queryIdx).pt);
+        from_points.push_back(prev_frame.get_keypoint(match.trainIdx).pt);
+        to_points.push_back(frame.get_keypoint(match.queryIdx).pt);
     }
 
     // Essential matrix and pose estimation
     std::vector<uchar> inliers;
-    cv::Mat E =
-            cv::findEssentialMat(fromPoints, toPoints, camera.getIntrinsicMatrix(), cv::RANSAC, 0.999, 1.0, inliers);
+    cv::Mat E = cv::findEssentialMat(from_points, to_points, camera.get_intrinsic_matrix(), cv::RANSAC, 0.999, 1.0,
+                                     inliers);
     cv::Mat R, t;
 
     // Filter matches based on inliers
@@ -72,11 +75,13 @@ PoseEstimate estimatePose(const Frame &prevFrame, const Frame &frame, const Came
     }
     std::cout << "Number of matches: " << filteredMatches.size() << std::endl;
 
-    cv::recoverPose(E, fromPoints, toPoints, camera.getIntrinsicMatrix(), R, t, inliers);
+    cv::recoverPose(E, from_points, to_points, camera.get_intrinsic_matrix(), R, t, inliers);
 
     cv::Mat relativePose = cv::Mat::eye(4, 4, CV_64F);
     R.copyTo(relativePose(cv::Rect(0, 0, 3, 3)));
     t.copyTo(relativePose(cv::Rect(3, 0, 1, 3)));
 
-    return PoseEstimate{ prevFrame.getPose() * relativePose.inv(), filteredMatches };
+    return PoseEstimate{ prev_frame.get_pose() * relativePose.inv(), filteredMatches };
 }
+
+};

@@ -2,66 +2,28 @@
 
 #include <opencv2/opencv.hpp>
 
+namespace slam
+{
+
 class Camera {
 public:
-    Camera(cv::Mat K, int width, int height)
-            : K(K)
-            , width(width)
-            , height(height)
-    {
-    }
+    Camera(cv::Mat K, int width, int height);
 
-    cv::Mat getProjectionMatrix(const cv::Mat &pose) const
-    {
-        cv::Mat E = pose.inv();
-        cv::Mat projectionMatrix = K * E.rowRange(0, 3);
-        return projectionMatrix;
-    }
+    cv::Point3f to_camera_coordinates(const cv::Point3f &point, const cv::Mat &pose) const;
+    cv::Point2f to_image_coordinates(const cv::Point3f &point, const cv::Mat &pose) const;
 
-    cv::Point3f toCameraCoordinates(const cv::Point3f &point, const cv::Mat &pose) const
-    {
-        cv::Mat pointMat = cv::Mat(4, 1, CV_64F);
-        pointMat.at<double>(0, 0) = point.x;
-        pointMat.at<double>(1, 0) = point.y;
-        pointMat.at<double>(2, 0) = point.z;
-        pointMat.at<double>(3, 0) = 1;
+    cv::Mat get_projection_matrix(const cv::Mat &pose) const;
+    const cv::Mat &get_intrinsic_matrix() const;
 
-        cv::Mat cameraPoint = pose * pointMat;
-        cameraPoint /= cameraPoint.at<double>(3, 0);
-        return cv::Point3f(cameraPoint.at<double>(0, 0), cameraPoint.at<double>(1, 0), cameraPoint.at<double>(2, 0));
-    }
-
-    cv::Point2f toImageCoordinates(const cv::Point3f &point, const cv::Mat &pose) const
-    {
-        cv::Mat pointMat = cv::Mat(4, 1, CV_64F);
-        pointMat.at<double>(0, 0) = point.x;
-        pointMat.at<double>(1, 0) = point.y;
-        pointMat.at<double>(2, 0) = point.z;
-        pointMat.at<double>(3, 0) = 1;
-
-        cv::Mat projectionMatrix = getProjectionMatrix(pose);
-        cv::Mat imagePoint = projectionMatrix * pointMat;
-        imagePoint /= imagePoint.at<double>(2, 0);
-        return cv::Point2f(imagePoint.at<double>(0, 0), imagePoint.at<double>(1, 0));
-    }
-
-    int getWidth() const
-    {
-        return width;
-    }
-
-    int getHeight() const
-    {
-        return height;
-    }
-
-    const cv::Mat &getIntrinsicMatrix() const
-    {
-        return K;
-    }
+    int get_width() const;
+    int get_height() const;
 
 private:
-    const cv::Mat K;
-    const int width;
-    const int height;
+    const cv::Mat m_K;
+    const int m_width;
+    const int m_height;
+};
+
+bool within_frame(const cv::Point2f &point, const Camera &camera);
+
 };
