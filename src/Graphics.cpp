@@ -1,5 +1,7 @@
-#include "Graphics.h"
 #include <iostream>
+#include <glm/gtc/matrix_transform.hpp>
+
+#include "Graphics.h"
 
 namespace slam
 {
@@ -44,6 +46,10 @@ void Graphics::initialize_gl()
     glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     glfwSetMouseButtonCallback(m_window, mouse_button_callback);
     glfwSetWindowUserPointer(m_window, this);
+
+    if (!gladLoadGLLoader((GLADloadproc) glfwGetProcAddress)) {
+        throw std::runtime_error("Failed to initialize GLAD");
+    }
 
     glEnable(GL_DEPTH_TEST);
     glViewport(0, 0, m_width, m_height);
@@ -101,7 +107,8 @@ void Graphics::draw_scene(const Map &map)
     // Set up view/projection matrices
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    gluPerspective(45.0f, (float)m_width / m_height, 0.1f, 1000.0f);
+    glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)m_width / m_height, 0.1f, 1000.0f);
+    glLoadMatrixf(&projection[0][0]);
 
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();

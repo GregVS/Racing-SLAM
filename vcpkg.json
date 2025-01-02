@@ -1,0 +1,16 @@
+{
+  "dependencies": [
+    "glad",
+    "glm",
+    "glfw3",
+    "g2o",
+    {
+      "name": "opencv",
+      "features": [
+        "default-features",
+        "gtk",
+        "ffmpeg"
+      ]
+    }
+  ]
+}

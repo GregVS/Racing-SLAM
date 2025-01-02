@@ -4,6 +4,8 @@
 #include <unordered_map>
 #include <vector>
 #include <limits>
+#include <memory>
+
 #include "Frame.h"
 #include "Camera.h"
 
@@ -27,7 +29,7 @@ public:
 
     void remove_map_point(int id);
 
-    const std::vector<std::unique_ptr<Frame> > &get_frames() const;
+    const std::vector<std::unique_ptr<Frame>> &get_frames() const;
 
     int get_next_frame_id() const;
 
@@ -39,7 +41,7 @@ public:
 
 private:
     std::unordered_map<int, MapPoint> m_points;
-    std::vector<std::unique_ptr<Frame> > m_frames;
+    std::vector<std::unique_ptr<Frame>> m_frames;
     Camera m_camera;
 
     int m_next_point_id = 0;
