@@ -4,6 +4,7 @@
 #include "MapMatching.h"
 #include "Map.h"
 #include "Frame.h"
+#include "BundleAdjustment.h"
 
 int main()
 {
@@ -24,16 +25,17 @@ int main()
 
         slam::Camera camera{ K, W, H };
 
-        std::vector<cv::Mat> cameraPoses;
         slam::Map map(camera);
 
         auto start = std::chrono::high_resolution_clock::now();
+
+        bool run_video = true;
 
         while (graphics.is_running()) {
             auto end = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
-            if (duration.count() > 200) {
+            if (duration.count() > 200 && run_video) {
                 start = end;
                 cv::Mat image = slam::next_frame(cap);
 
@@ -41,7 +43,6 @@ int main()
                 if (map.get_frames().empty()) {
                     slam::Frame &frame = map.add_frame(slam::extract_features(image, map.get_next_frame_id()));
                     frame.set_pose(cv::Mat::eye(4, 4, CV_64F));
-                    cameraPoses.push_back(frame.get_pose());
                     continue;
                 }
 
@@ -53,11 +54,21 @@ int main()
                 slam::draw_matches(prevFrame, frame, poseEstimate.filteredMatches);
 
                 frame.set_pose(poseEstimate.pose);
-                cameraPoses.push_back(poseEstimate.pose);
 
                 slam::piggyback_prev_frame_matches(map, prevFrame, frame, poseEstimate.filteredMatches);
                 slam::match_map_points(map, frame);
                 slam::triangulate_points(map, prevFrame, frame, poseEstimate.filteredMatches);
+
+                if (map.get_frames().size() > 2) {
+                    slam::BundleAdjustment ba;
+                    ba.optimize_map(map);
+                    slam::cull_points(map);
+                }
+                if (map.get_frames().size() > 25) {
+                    run_video = false;
+                }
+
+                std::cout << "Map reprojection error: " << slam::reprojection_error(map) << std::endl;
 
                 std::cout << "Number of map points: " << map.get_map_points().size() << std::endl;
 
@@ -65,7 +76,7 @@ int main()
             }
 
             // Draw 3d scene
-            graphics.draw_scene(cameraPoses, map);
+            graphics.draw_scene(map);
         }
 
         cap.release();

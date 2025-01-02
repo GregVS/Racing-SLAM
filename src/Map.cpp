@@ -32,6 +32,11 @@ MapPoint &Map::add_map_point(cv::Point3f position)
     return m_points.at(id);
 }
 
+void Map::remove_map_point(int id)
+{
+    m_points.erase(id);
+}
+
 int Map::get_next_frame_id() const
 {
     return m_frames.size();

@@ -16,4 +16,10 @@ void match_map_points(Map &map, Frame &frame);
 // If keypoints in prev frame are matched to a 3D map point, also use that match in the current frame
 void piggyback_prev_frame_matches(Map &map, const Frame &prev_frame, Frame &frame, const std::vector<cv::DMatch> &matches);
 
+// Calculate reprojection error for all map points
+float reprojection_error(const Map& map);
+
+// Cull map points with high reprojection error
+void cull_points(Map &map);
+
 };

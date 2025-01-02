@@ -25,6 +25,11 @@ const cv::Point3f &MapPoint::get_position() const
     return m_position;
 }
 
+void MapPoint::set_position(cv::Point3f position)
+{
+    m_position = position;
+}
+
 std::vector<MapPoint::ObservationData> MapPoint::get_observations_vector() const
 {
     return std::vector<ObservationData>(m_observations.begin(), m_observations.end());
@@ -35,6 +40,11 @@ void MapPoint::for_each_observation(const std::function<void(Frame *, int)> &cal
     for (const auto &[frame, keypointIndex] : m_observations) {
         callback(frame, keypointIndex);
     }
+}
+
+size_t MapPoint::observation_count() const
+{
+    return m_observations.size();
 }
 
 bool MapPoint::is_observed_by(Frame *frame) const

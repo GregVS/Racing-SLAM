@@ -36,7 +36,8 @@ void match_map_points(Map &map, Frame &frame)
     std::cout << "Matches: " << matches << std::endl;
 }
 
-void piggyback_prev_frame_matches(Map &map, const Frame &prev_frame, Frame &frame, const std::vector<cv::DMatch> &matches)
+void piggyback_prev_frame_matches(Map &map, const Frame &prev_frame, Frame &frame,
+                                  const std::vector<cv::DMatch> &matches)
 {
     for (const auto &match : matches) {
         if (frame.get_corresponding_map_point(match.queryIdx)) {
@@ -97,8 +98,9 @@ void triangulate_points(Map &map, Frame &prev_frame, Frame &frame, const std::ve
         auto reprojection1 = map.get_camera().to_image_coordinates(point3D, prev_frame.get_pose());
         auto reprojection2 = map.get_camera().to_image_coordinates(point3D, frame.get_pose());
 
-        reprojection_errors.push_back(cv::norm(reprojection1 - prev_frame.get_keypoint(matches[i].trainIdx).pt));
-        reprojection_errors.push_back(cv::norm(reprojection2 - frame.get_keypoint(matches[i].queryIdx).pt));
+        reprojection_errors.push_back(
+                cv::norm(reprojection1 - prev_frame.get_keypoint(prev_frame_keypoint_indices[i]).pt));
+        reprojection_errors.push_back(cv::norm(reprojection2 - frame.get_keypoint(frame_keypoint_indices[i]).pt));
 
         auto &mapPoint = map.add_map_point(point3D);
         mapPoint.add_observation(&prev_frame, prev_frame_keypoint_indices[i]);
@@ -110,6 +112,48 @@ void triangulate_points(Map &map, Frame &prev_frame, Frame &frame, const std::ve
 
     std::cout << "Reprojection error: " << cv::mean(reprojection_errors)[0] << std::endl;
     std::cout << "New points: " << addedPoints << std::endl;
+}
+
+float reprojection_error(const Map &map)
+{
+    float error = 0;
+    int count = 0;
+    for (const auto &[_, point] : map.get_map_points()) {
+        point.for_each_observation([&](Frame *frame, int keypointIndex) {
+            auto point2D = map.get_camera().to_image_coordinates(point.get_position(), frame->get_pose());
+            auto err = cv::norm(point2D - frame->get_keypoint(keypointIndex).pt);
+            error += err;
+            count++;
+        });
+    }
+    return error / count;
+}
+
+void cull_points(Map &map)
+{
+    int removedPoints = 0;
+    std::vector<int> idsToCull;
+    for (const auto &[_, point] : map.get_map_points()) {
+        float error = 0;
+        int count = 0;
+        point.for_each_observation([&](Frame *frame, int keypointIndex) {
+            auto point2D = map.get_camera().to_image_coordinates(point.get_position(), frame->get_pose());
+            auto err = cv::norm(point2D - frame->get_keypoint(keypointIndex).pt);
+            error += err;
+            count++;
+        });
+        if (error / count > 20) {
+            idsToCull.push_back(point.get_id());
+        }
+    }
+    for (const auto &id : idsToCull) {
+        auto &point = map.get_map_point(id);
+        point.for_each_observation(
+                [&](Frame *frame, int keypointIndex) { frame->set_corresponding_map_point(keypointIndex, nullptr); });
+        map.remove_map_point(point.get_id());
+        removedPoints++;
+    }
+    std::cout << "Removed points: " << removedPoints << std::endl;
 }
 
 };

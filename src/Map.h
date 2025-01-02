@@ -25,6 +25,8 @@ public:
 
     MapPoint &add_map_point(cv::Point3f position);
 
+    void remove_map_point(int id);
+
     const std::vector<std::unique_ptr<Frame> > &get_frames() const;
 
     int get_next_frame_id() const;

@@ -21,6 +21,8 @@ public:
 
     const cv::Point3f &get_position() const;
 
+    void set_position(cv::Point3f position);
+
     bool is_observed_by(Frame *frame) const;
 
     using ObservationData = std::pair<Frame*, int>;
@@ -33,7 +35,7 @@ public:
 
 private:
     const int m_id;
-    const cv::Point3f m_position;
+    cv::Point3f m_position;
     std::unordered_map<Frame *, int> m_observations;
 };
 
