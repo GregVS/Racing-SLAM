@@ -1,4 +1,5 @@
 #include <chrono>
+#include <thread>
 
 #include "Features.h"
 #include "VideoDisplay.h"
@@ -16,6 +17,7 @@ int main()
         cv::VideoCapture cap = slam::init_video(videoPath);
 
         slam::Graphics graphics(800, 600);
+        std::thread graphics_thread(&slam::Graphics::run, &graphics);
 
         int W = 1920;
         int H = 1080;
@@ -33,13 +35,16 @@ int main()
 
         bool run_video = true;
 
-        while (graphics.is_running()) {
+        while (true) {
             auto end = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
-            if (duration.count() > 200 && run_video) {
+            if (duration.count() > 0 && run_video) {
                 start = end;
                 cv::Mat image = slam::next_frame(cap);
+
+                std::cout << "----------" << std::endl;
+                std::cout << "Frame: " << map.get_frames().size() << std::endl;
 
                 // Process frame
                 if (map.get_frames().empty()) {
@@ -54,33 +59,32 @@ int main()
                 auto matches = slam::match_features(prevFrame, frame);
                 auto poseEstimate = slam::estimate_pose(prevFrame, frame, camera, matches);
                 slam::draw_matches(prevFrame, frame, poseEstimate.filteredMatches);
-
                 frame.set_pose(poseEstimate.pose);
 
                 slam::piggyback_prev_frame_matches(map, prevFrame, frame, poseEstimate.filteredMatches);
+
+                if (map.get_frames().size() > 2) {
+                    slam::bundle_adjustment(map, 1, false);
+                }
+
                 slam::match_map_points(map, frame);
                 slam::triangulate_points(map, prevFrame, frame, poseEstimate.filteredMatches);
 
-                if (map.get_frames().size() > 2) {
-                    slam::BundleAdjustment ba;
-                    ba.optimize_map(map);
-                    slam::cull_points(map);
-                }
-                if (map.get_frames().size() > 25) {
-                    run_video = false;
+                if (map.get_frames().size() > 2 && map.get_next_frame_id() % 5 == 0) {
+                    slam::bundle_adjustment(map, 10, true);
                 }
 
                 std::cout << "Map reprojection error: " << slam::reprojection_error(map) << std::endl;
-
                 std::cout << "Number of map points: " << map.get_map_points().size() << std::endl;
+
+                auto scene = slam::scene_from_map(map);
+                graphics.set_scene(scene);
 
                 cv::waitKey(1);
             }
-
-            // Draw 3d scene
-            graphics.draw_scene(map);
         }
 
+        graphics_thread.join();
         cap.release();
         cv::destroyAllWindows();
     } catch (const std::exception &e) {

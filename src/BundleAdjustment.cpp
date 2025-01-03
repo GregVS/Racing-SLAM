@@ -1,183 +1,154 @@
+#include <iostream>
+
 #include "BundleAdjustment.h"
 
-#include <g2o/core/block_solver.h>
-#include <g2o/core/optimization_algorithm_levenberg.h>
-#include <g2o/solvers/eigen/linear_solver_eigen.h>
-#include <g2o/types/sba/types_six_dof_expmap.h>
-#include <g2o/core/robust_kernel_impl.h>
-#include <g2o/core/sparse_optimizer.h>
+namespace slam {
 
-namespace slam
-{
+class ReprojectionError {
+public:
+    ReprojectionError(const cv::Point2f& observation, double focal_length, const cv::Point2f& principal_point)
+        : observation_(observation), focal_length_(focal_length), principal_point_(principal_point) {}
 
-Eigen::Vector2d cv_point_to_eigen(const cv::Point2f &point)
-{
-    return Eigen::Vector2d(point.x, point.y);
-}
+    // The camera params (angle/translation) should transform from world coords to camera coords
+    template <typename T>
+    bool operator()(const T* const camera, const T* const point, T* residuals) const {
+        const T* camera_rotation = &camera[0];
+        const T* camera_translation = &camera[3];
 
-Eigen::Vector3d cv_point_to_eigen(const cv::Point3f &point)
-{
-    return Eigen::Vector3d(point.x, point.y, point.z);
-}
+        T p[3];
+        ceres::AngleAxisRotatePoint(camera_rotation, point, p);
+        p[0] += camera_translation[0];
+        p[1] += camera_translation[1];
+        p[2] += camera_translation[2];
 
-cv::Point2f eigen_to_cv_point(const Eigen::Vector2d &vec)
-{
-    return cv::Point2f(vec.x(), vec.y());
-}
+        T predicted_x = T(focal_length_) * p[0] / p[2] + T(principal_point_.x);
+        T predicted_y = T(focal_length_) * p[1] / p[2] + T(principal_point_.y);
 
-cv::Point3f eigen_to_cv_point(const Eigen::Vector3d &vec)
-{
-    return cv::Point3f(vec.x(), vec.y(), vec.z());
-}
+        residuals[0] = predicted_x - T(observation_.x);
+        residuals[1] = predicted_y - T(observation_.y);
 
-Eigen::Isometry3d cv_mat_to_isometry3d(const cv::Mat &pose)
-{
-    Eigen::Isometry3d T = Eigen::Isometry3d::Identity();
-
-    if (pose.rows < 3 || pose.cols < 4) {
-        throw std::runtime_error("Invalid pose matrix dimensions");
+        return true;
     }
 
-    Eigen::Matrix3d R;
-    for (int i = 0; i < 3; i++) {
-        for (int j = 0; j < 3; j++) {
-            R(i, j) = pose.at<double>(i, j);
+private:
+    const cv::Point2f observation_;
+    const double focal_length_;
+    const cv::Point2f principal_point_;
+};
+
+static cv::Mat rodrigues_to_matrix(const cv::Vec3d& rvec) {
+    cv::Mat R;
+    cv::Rodrigues(rvec, R);
+    return R;
+}
+
+static cv::Vec3d matrix_to_rodrigues(const cv::Mat& R) {
+    cv::Vec3d rvec;
+    cv::Rodrigues(R, rvec);
+    return rvec;
+}
+
+static bool frameInWindow(Map& map, Frame* frame, int window) {
+    if (window < 1) return true;
+    return frame->get_id() >= (map.get_frames().size() - window);
+}
+
+void bundle_adjustment(Map& map, int window, bool optimize_points) {
+    auto problem = std::make_unique<ceres::Problem>();
+    
+    std::unordered_map<int, std::array<double, 6>> camera_poses;  // [angle-axis (3), translation (3)]
+    std::unordered_map<int, std::array<double, 3>> points;
+    
+    double focal_length = map.get_camera().get_intrinsic_matrix().at<double>(0, 0);
+    cv::Point2f principal_point(
+        map.get_camera().get_width() / 2.0f, 
+        map.get_camera().get_height() / 2.0f
+    );
+
+    // Add poses
+    for (const auto& frame : map.get_frames()) {
+        if (!optimize_points && !frameInWindow(map, frame.get(), window)) continue;
+
+        cv::Mat pose_inv = frame->get_pose().inv();
+        cv::Mat R = pose_inv(cv::Rect(0, 0, 3, 3));
+        cv::Mat t = pose_inv(cv::Rect(3, 0, 1, 3));
+        
+        cv::Vec3d rvec = matrix_to_rodrigues(R);
+        auto& pose_params = camera_poses[frame->get_id()];
+        
+        // Rotation
+        pose_params[0] = rvec[0];
+        pose_params[1] = rvec[1];
+        pose_params[2] = rvec[2];
+        
+        // Translation
+        pose_params[3] = t.at<double>(0);
+        pose_params[4] = t.at<double>(1);
+        pose_params[5] = t.at<double>(2);
+
+        // Add an entry for all points we want included
+        for (int i = 0; i < frame->get_keypoints().size(); i++) {
+            MapPoint* map_point = frame->get_corresponding_map_point(i);
+            if (!map_point) continue;
+
+            // Add point
+            auto& point = points[map_point->get_id()];
+            cv::Point3f pos = map_point->get_position();
+            point[0] = pos.x;
+            point[1] = pos.y;
+            point[2] = pos.z;
+
+            // Add edge
+            ceres::CostFunction* cost_function = new ceres::AutoDiffCostFunction<ReprojectionError, 2, 6, 3>(
+                    new ReprojectionError(frame->get_keypoint(i).pt, focal_length, principal_point));
+            problem->AddResidualBlock(
+                cost_function,
+                new ceres::HuberLoss(1.0),
+                pose_params.data(),
+                point.data()
+            );
+
+            if (frame->get_id() < 2 || !frameInWindow(map, frame.get(), window)) {
+                problem->SetParameterBlockConstant(pose_params.data());
+            }
         }
     }
 
-    Eigen::Vector3d t;
-    for (int i = 0; i < 3; i++) {
-        t(i) = pose.at<double>(i, 3);
+    // Solve
+    ceres::Solver::Options options;
+    options.linear_solver_type = ceres::SPARSE_SCHUR;
+    options.minimizer_progress_to_stdout = true;
+    options.max_num_iterations = 10;
+
+    ceres::Solver::Summary summary;
+    ceres::Solve(options, problem.get(), &summary);
+    std::cout << summary.FullReport() << std::endl;
+
+    // Update poses and points
+    for (const auto& frame : map.get_frames()) {
+        if (camera_poses.find(frame->get_id()) == camera_poses.end()) continue;
+
+        auto& pose_params = camera_poses[frame->get_id()];
+        if (problem->IsParameterBlockConstant(pose_params.data())) continue;
+        
+        cv::Vec3d rvec(pose_params[0], pose_params[1], pose_params[2]);
+        cv::Mat R = rodrigues_to_matrix(rvec);
+        
+        cv::Mat pose = cv::Mat::eye(4, 4, CV_64F);
+        R.copyTo(pose(cv::Rect(0, 0, 3, 3)));
+        pose.at<double>(0, 3) = pose_params[3];
+        pose.at<double>(1, 3) = pose_params[4];
+        pose.at<double>(2, 3) = pose_params[5];
+        
+        frame->set_pose(pose.inv());
     }
 
-    T.linear() = R;
-    T.translation() = t;
-
-    return T;
-}
-
-cv::Mat isometry3d_to_cv_mat(const Eigen::Isometry3d &T)
-{
-    cv::Mat pose = cv::Mat::eye(4, 4, CV_64F);
-
-    for (int i = 0; i < 3; i++) {
-        for (int j = 0; j < 3; j++) {
-            pose.at<double>(i, j) = T.linear()(i, j);
+    if (optimize_points) {
+        for (const auto& [id, point] : points) {
+            cv::Point3f pos(point[0], point[1], point[2]);
+            map.get_map_point(id).set_position(pos);
         }
     }
-
-    for (int i = 0; i < 3; i++) {
-        pose.at<double>(i, 3) = T.translation()(i);
-    }
-
-    return pose;
-}
-
-BundleAdjustment::BundleAdjustment()
-{
-    m_optimizer.setVerbose(true);
-
-    auto linear_solver = std::make_unique<g2o::LinearSolverEigen<g2o::BlockSolver_6_3::PoseMatrixType> >();
-    auto block_solver = std::make_unique<g2o::BlockSolver_6_3>(std::move(linear_solver));
-    auto algorithm = new g2o::OptimizationAlgorithmLevenberg(std::move(block_solver));
-    m_optimizer.setAlgorithm(algorithm);
-}
-
-void BundleAdjustment::optimize_map(Map &map)
-{
-    g2o::CameraParameters *cam = new g2o::CameraParameters(
-            map.get_camera().get_intrinsic_matrix().at<double>(0, 0),
-            Eigen::Vector2d(map.get_camera().get_width() / 2, map.get_camera().get_height() / 2), 0.0);
-    cam->setId(0);
-    m_optimizer.addParameter(cam);
-
-    for (const auto &frame : map.get_frames()) {
-        cv::Mat pose = frame->get_pose().inv();
-        add_camera_pose(frame->get_id() * 2, cv_mat_to_isometry3d(pose), frame->get_id() < 2);
-        std::cout << "Frame " << frame->get_id() << " pose: " << frame->get_pose().col(3).t() << std::endl;
-    }
-
-    for (const auto &[id, point] : map.get_map_points()) {
-        add_point(point.get_id() * 2 + 1, cv_point_to_eigen(point.get_position()));
-
-        point.for_each_observation([&](const Frame *frame, int keypoint_idx) {
-            add_projection_edge(frame->get_id() * 2, point.get_id() * 2 + 1,
-                                cv_point_to_eigen(frame->get_keypoint(keypoint_idx).pt), Eigen::Matrix2d::Identity());
-        });
-    }
-
-    optimize();
-
-    for (auto &frame : map.get_frames()) {
-        cv::Mat pose = isometry3d_to_cv_mat(get_camera_pose(frame->get_id() * 2)).inv();
-        frame->set_pose(pose);
-        std::cout << "Frame " << frame->get_id() << " pose: " << pose.col(3).t() << std::endl;
-    }
-
-    for (auto &[id, point] : map.get_map_points()) {
-        point.set_position(eigen_to_cv_point(get_point(point.get_id() * 2 + 1)));
-    }
-
-    m_optimizer.clear();
-}
-
-void BundleAdjustment::optimize(int iterations)
-{
-    m_optimizer.initializeOptimization();
-    m_optimizer.optimize(iterations);
-}
-
-void BundleAdjustment::add_camera_pose(const int id, const Eigen::Isometry3d &pose, bool fixed)
-{
-    auto v = new g2o::VertexSE3Expmap();
-    v->setId(id);
-    v->setEstimate(g2o::SE3Quat(pose.rotation(), pose.translation()));
-    v->setFixed(fixed);
-    m_optimizer.addVertex(v);
-}
-
-void BundleAdjustment::add_point(const int id, const Eigen::Vector3d &point)
-{
-    auto v = new g2o::VertexPointXYZ();
-    v->setId(id);
-    v->setEstimate(point);
-    v->setMarginalized(true);
-    m_optimizer.addVertex(v);
-}
-
-void BundleAdjustment::add_projection_edge(const int pose_id, const int point_id, const Eigen::Vector2d &measurement,
-                                           const Eigen::Matrix2d &information)
-{
-    auto edge = new g2o::EdgeProjectXYZ2UV();
-    edge->setVertex(0, m_optimizer.vertex(point_id));
-    edge->setVertex(1, m_optimizer.vertex(pose_id));
-    edge->setMeasurement(measurement);
-    edge->setInformation(information);
-    edge->setParameterId(0, 0);
-    edge->setRobustKernel(new g2o::RobustKernelHuber());
-    m_optimizer.addEdge(edge);
-}
-
-Eigen::Isometry3d BundleAdjustment::get_camera_pose(const int id)
-{
-    auto v = dynamic_cast<g2o::VertexSE3Expmap *>(m_optimizer.vertex(id));
-    if (v) {
-        g2o::SE3Quat se3 = v->estimate();
-        Eigen::Isometry3d pose = Eigen::Isometry3d::Identity();
-        pose.rotate(se3.rotation());
-        pose.translate(se3.translation());
-        return pose;
-    }
-    return Eigen::Isometry3d::Identity();
-}
-
-Eigen::Vector3d BundleAdjustment::get_point(const int id)
-{
-    auto v = dynamic_cast<g2o::VertexPointXYZ *>(m_optimizer.vertex(id));
-    if (v) {
-        return v->estimate();
-    }
-    return Eigen::Vector3d::Zero();
 }
 
 };

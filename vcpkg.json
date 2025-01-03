@@ -3,7 +3,13 @@
     "glad",
     "glm",
     "glfw3",
-    "g2o",
+    {
+      "name": "ceres",
+      "features": [
+        "schur",
+        "eigensparse"
+      ]
+    },
     {
       "name": "opencv",
       "features": [

@@ -10,17 +10,9 @@ find_package(OpenCV REQUIRED)
 find_package(glm REQUIRED)
 find_package(glfw3 REQUIRED)
 find_package(glad REQUIRED)
-find_package(g2o REQUIRED)
+find_package(Ceres REQUIRED)
 
 file(GLOB SRC_FILES src/*.cpp)
 add_executable(slam ${SRC_FILES})
 
-set(G2O_LIBRARIES
-    g2o::core
-    g2o::stuff
-    g2o::types_slam3d
-    g2o::types_sba
-    g2o::solver_eigen
-)
-
-target_link_libraries(slam glm::glm glad::glad glfw ${G2O_LIBRARIES} ${OpenCV_LIBS})
+target_link_libraries(slam glm::glm glad::glad glfw Ceres::ceres ${OpenCV_LIBS})

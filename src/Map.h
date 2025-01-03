@@ -13,7 +13,6 @@ namespace slam
 {
 
 struct MapPoint;
-struct Map;
 
 class Map {
 public:

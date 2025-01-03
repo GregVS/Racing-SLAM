@@ -5,6 +5,18 @@
 
 namespace slam
 {
+    
+Scene scene_from_map(const Map& map)
+{
+    Scene scene;
+    for (const auto& frame : map.get_frames()) {
+        scene.poses.push_back(frame->get_pose());
+    }
+    for (const auto& [_, point] : map.get_map_points()) {
+        scene.map_points.push_back(point.get_position());
+    }
+    return scene;
+}
 
 Graphics::Graphics(int w, int h)
         : m_width(w)
@@ -19,8 +31,6 @@ Graphics::Graphics(int w, int h)
     m_last_x = m_width / 2.0f;
     m_last_y = m_height / 2.0f;
     m_mouse_button_pressed = false;
-
-    initialize_gl();
 }
 
 Graphics::~Graphics()
@@ -69,10 +79,9 @@ void draw_camera()
     glEnd();
 }
 
-void draw_camera_poses(const Map &map)
+void draw_camera_poses(const Scene &scene)
 {
-    for (const auto &frame : map.get_frames()) {
-        cv::Mat pose = frame->get_pose();
+    for (const auto &pose : scene.poses) {
         glPushMatrix();
 
         double openGLMatrix[16] = { pose.at<double>(0, 0), pose.at<double>(1, 0), pose.at<double>(2, 0), 0.0,
@@ -86,18 +95,31 @@ void draw_camera_poses(const Map &map)
     }
 }
 
-void draw_point_cloud(const Map &map)
+void draw_point_cloud(const Scene &scene)
 {
     glBegin(GL_POINTS);
     glColor3f(1.0f, 1.0f, 1.0f);
     glPointSize(3.0f);
-    for (const auto &[_, point] : map.get_map_points()) {
-        glVertex3f(point.get_position().x, point.get_position().y, point.get_position().z);
+    for (const auto& point : scene.map_points) {
+        glVertex3f(point.x, point.y, point.z);
     }
     glEnd();
 }
 
-void Graphics::draw_scene(const Map &map)
+void Graphics::set_scene(const Scene& scene) 
+{
+    std::lock_guard<std::mutex> guard(m_scene_lock);
+    m_scene = scene;
+}
+
+void Graphics::run() {
+    initialize_gl();
+    while (is_running()) {
+        update();
+    }
+}
+
+void Graphics::update()
 {
     process_input();
 
@@ -116,9 +138,12 @@ void Graphics::draw_scene(const Map &map)
     glm::mat4 view = glm::lookAt(m_camera_pos, m_camera_pos + m_camera_front, m_camera_up);
     glLoadMatrixf(&view[0][0]);
 
-    draw_axes();
-    draw_camera_poses(map);
-    draw_point_cloud(map);
+    {
+        std::lock_guard<std::mutex> guard(m_scene_lock);
+        draw_axes();
+        draw_camera_poses(m_scene);
+        draw_point_cloud(m_scene);
+    }
 
     glfwSwapBuffers(m_window);
     glfwPollEvents();

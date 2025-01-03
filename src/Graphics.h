@@ -3,11 +3,19 @@
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 #include <GLFW/glfw3.h>
+#include <mutex>
 
 #include "Map.h"
 
 namespace slam
 {
+
+struct Scene {
+    std::vector<cv::Mat> poses;
+    std::vector<cv::Point3f> map_points;
+};
+
+Scene scene_from_map(const Map& map);
 
 class Graphics {
 public:
@@ -17,10 +25,15 @@ public:
 
     bool is_running();
 
-    void draw_scene(const Map &map);
+    void run();
+
+    void set_scene(const Scene& scene);
 
 private:
     GLFWwindow *m_window;
+    Scene m_scene;
+    std::mutex m_scene_lock;
+
     int m_width, m_height;
 
     // Camera
@@ -38,6 +51,8 @@ private:
     void initialize_gl();
     void draw_axes();
     void process_input();
+
+    void update();
 
     static void framebuffer_size_callback(GLFWwindow *window, int width, int height);
 

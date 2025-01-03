@@ -73,7 +73,7 @@ PoseEstimate estimate_pose(const Frame &prev_frame, const Frame &frame, const Ca
         }
         filteredMatches.push_back(matches[i]);
     }
-    std::cout << "Number of matches: " << filteredMatches.size() << std::endl;
+    std::cout << "Keypoint matches: " << filteredMatches.size() << std::endl;
 
     cv::recoverPose(E, from_points, to_points, camera.get_intrinsic_matrix(), R, t, inliers);
 
