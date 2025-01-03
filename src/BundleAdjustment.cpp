@@ -7,7 +7,7 @@ namespace slam {
 class ReprojectionError {
 public:
     ReprojectionError(const cv::Point2f& observation, double focal_length, const cv::Point2f& principal_point)
-        : observation_(observation), focal_length_(focal_length), principal_point_(principal_point) {}
+        : m_observation(observation), m_focal_length(focal_length), m_principal_point(principal_point) {}
 
     // The camera params (angle/translation) should transform from world coords to camera coords
     template <typename T>
@@ -21,19 +21,19 @@ public:
         p[1] += camera_translation[1];
         p[2] += camera_translation[2];
 
-        T predicted_x = T(focal_length_) * p[0] / p[2] + T(principal_point_.x);
-        T predicted_y = T(focal_length_) * p[1] / p[2] + T(principal_point_.y);
+        T normalized_obs_x = (T(m_observation.x) - T(m_principal_point.x)) / T(m_focal_length);
+        T normalized_obs_y = (T(m_observation.y) - T(m_principal_point.y)) / T(m_focal_length);
 
-        residuals[0] = predicted_x - T(observation_.x);
-        residuals[1] = predicted_y - T(observation_.y);
+        residuals[0] = p[0] / p[2] - normalized_obs_x;
+        residuals[1] = p[1] / p[2] - normalized_obs_y;
 
         return true;
     }
 
 private:
-    const cv::Point2f observation_;
-    const double focal_length_;
-    const cv::Point2f principal_point_;
+    const cv::Point2f m_observation;
+    const double m_focal_length;
+    const cv::Point2f m_principal_point;
 };
 
 static cv::Mat rodrigues_to_matrix(const cv::Vec3d& rvec) {
@@ -103,7 +103,7 @@ void bundle_adjustment(Map& map, int window, bool optimize_points) {
                     new ReprojectionError(frame->get_keypoint(i).pt, focal_length, principal_point));
             problem->AddResidualBlock(
                 cost_function,
-                new ceres::HuberLoss(1.0),
+                new ceres::HuberLoss(sqrt(5.991)),
                 pose_params.data(),
                 point.data()
             );
