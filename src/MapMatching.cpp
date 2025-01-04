@@ -120,7 +120,9 @@ void triangulate_points(Map &map, Frame &prev_frame, Frame &frame, const std::ve
     }
 
     std::cout << "Triangulated points: " << addedPoints << std::endl;
-    std::cout << "Triangulation reprojection error: " << cv::mean(reprojection_errors)[0] << std::endl;
+    if (addedPoints > 0) {
+        std::cout << "Triangulation reprojection error: " << cv::mean(reprojection_errors)[0] << std::endl;
+    }
 }
 
 float reprojection_error(const Map &map)
@@ -132,9 +134,6 @@ float reprojection_error(const Map &map)
 
     for (const auto &[_, point] : map.get_map_points()) {
         point.for_each_observation([&](Frame *frame, int keypointIndex) {
-            // if (frame != lastFrame) {
-            //     return;
-            // }
             auto point2D = map.get_camera().to_image_coordinates(point.get_position(), frame->get_pose());
             auto err = cv::norm(point2D - frame->get_keypoint(keypointIndex).pt);
             error += err;
