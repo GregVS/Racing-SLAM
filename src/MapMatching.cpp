@@ -145,6 +145,10 @@ float reprojection_error(const Map &map)
 
 void cull_points(Map &map)
 {
+    const float MAX_REPROJECTION_ERROR = 2.0;
+    const int MIN_OBSERVATIONS = 4;
+    const int MIN_OBSERVATIONS_GRACE_PERIOD = 8;
+    
     int removedPoints = 0;
     std::vector<int> idsToCull;
     for (const auto &[_, point] : map.get_map_points()) {
@@ -156,10 +160,15 @@ void cull_points(Map &map)
             error += err;
             count++;
         });
-        if (error / count > 10) {
+        bool seen_recently = point.get_observations_vector().back().first->get_id() >= (map.get_next_frame_id() - MIN_OBSERVATIONS_GRACE_PERIOD);
+        if (error / count > MAX_REPROJECTION_ERROR) {
+            std::cout << "Culling point " << point.get_id() << " with reprojection error " << error / count << std::endl;
+            idsToCull.push_back(point.get_id());
+        } else if (point.observation_count() < MIN_OBSERVATIONS && !seen_recently) {
             idsToCull.push_back(point.get_id());
         }
     }
+
     for (const auto &id : idsToCull) {
         auto &point = map.get_map_point(id);
         point.for_each_observation(
@@ -167,7 +176,7 @@ void cull_points(Map &map)
         map.remove_map_point(point.get_id());
         removedPoints++;
     }
-    std::cout << "Removed points: " << removedPoints << std::endl;
+    std::cout << "Culled " << removedPoints << " points" << std::endl;
 }
 
 };

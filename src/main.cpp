@@ -78,6 +78,7 @@ int main(int argc, char *argv[])
 
                 if (map.get_frames().size() > 2 && map.get_next_frame_id() % 5 == 0) {
                     slam::bundle_adjustment(map, 10, true);
+                    slam::cull_points(map);
                 }
 
                 std::cout << "Map reprojection error: " << slam::reprojection_error(map) << std::endl;
