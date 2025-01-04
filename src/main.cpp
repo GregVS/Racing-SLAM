@@ -9,9 +9,15 @@
 #include "Frame.h"
 #include "BundleAdjustment.h"
 
-int main()
+int main(int argc, char *argv[])
 {
-    std::string videoPath = "videos/highway.mp4";
+    std::string videoPath;
+    if (argc > 1) {
+        videoPath = argv[1];
+    } else {
+        std::cout << "Usage: ./slam <video_path>" << std::endl;
+        return -1;
+    }
 
     try {
         cv::VideoCapture cap = slam::init_video(videoPath);
