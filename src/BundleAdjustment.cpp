@@ -1,4 +1,7 @@
 #include <iostream>
+#include <ceres/ceres.h>
+#include <ceres/rotation.h>
+#include <opencv2/core.hpp>
 
 #include "BundleAdjustment.h"
 
@@ -74,22 +77,23 @@ void bundle_adjustment(Map& map, int window, bool optimize_points) {
         cv::Mat t = pose_inv(cv::Rect(3, 0, 1, 3));
         
         cv::Vec3d rvec = matrix_to_rodrigues(R);
-        auto& pose_params = camera_poses[frame->get_id()];
-        
-        // Rotation
-        pose_params[0] = rvec[0];
-        pose_params[1] = rvec[1];
-        pose_params[2] = rvec[2];
-        
-        // Translation
-        pose_params[3] = t.at<double>(0);
-        pose_params[4] = t.at<double>(1);
-        pose_params[5] = t.at<double>(2);
 
         // Add an entry for all points we want included
         for (int i = 0; i < frame->get_keypoints().size(); i++) {
             MapPoint* map_point = frame->get_corresponding_map_point(i);
             if (!map_point) continue;
+
+            auto& pose_params = camera_poses[frame->get_id()];
+            
+            // Rotation
+            pose_params[0] = rvec[0];
+            pose_params[1] = rvec[1];
+            pose_params[2] = rvec[2];
+            
+            // Translation
+            pose_params[3] = t.at<double>(0);
+            pose_params[4] = t.at<double>(1);
+            pose_params[5] = t.at<double>(2);
 
             // Add point
             auto& point = points[map_point->get_id()];
@@ -122,7 +126,7 @@ void bundle_adjustment(Map& map, int window, bool optimize_points) {
 
     ceres::Solver::Summary summary;
     ceres::Solve(options, problem.get(), &summary);
-    std::cout << summary.FullReport() << std::endl;
+    std::cout << summary.BriefReport() << std::endl;
 
     // Update poses and points
     for (const auto& frame : map.get_frames()) {
