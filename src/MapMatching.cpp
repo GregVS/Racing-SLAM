@@ -12,14 +12,14 @@ void match_map_points(Map &map, Frame &frame)
         auto point2D = map.get_camera().to_image_coordinates(point.get_position(), frame.get_pose());
 
         // Check if point is in frame
-        if (!within_frame(point2D, map.get_camera())) {
+        if (!within_frame(point2D, map.get_camera()) || point.is_observed_by(&frame)) {
             continue;
         }
 
         // Find a match
         auto keypoint_indices = frame.get_keypoints_within_radius(point2D, 2.0f);
         for (const auto keypoint : keypoint_indices) {
-            if (point.is_observed_by(&frame) || frame.get_corresponding_map_point(keypoint)) {
+            if (frame.get_corresponding_map_point(keypoint)) {
                 continue;
             }
 
@@ -146,8 +146,8 @@ float reprojection_error(const Map &map)
 void cull_points(Map &map)
 {
     const float MAX_REPROJECTION_ERROR = 2.0;
-    const int MIN_OBSERVATIONS = 4;
-    const int MIN_OBSERVATIONS_GRACE_PERIOD = 8;
+    const int MIN_OBSERVATIONS = 3;
+    const int MIN_OBSERVATIONS_GRACE_PERIOD = 10;
     
     int removedPoints = 0;
     std::vector<int> idsToCull;
