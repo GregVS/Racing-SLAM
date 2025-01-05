@@ -25,6 +25,9 @@ Frame extract_features(const cv::Mat &image, int id)
 
 std::vector<cv::DMatch> match_features(const Frame &prevFrame, const Frame &frame)
 {
+    constexpr int MIN_ORB_DISTANCE = 32;
+    constexpr float MAX_PROJ_ERROR = 5.0;
+
     auto matcher = cv::BFMatcher::create(cv::NORM_HAMMING);
     std::vector<std::vector<cv::DMatch> > knn_matches;
     matcher->knnMatch(frame.get_descriptors(), prevFrame.get_descriptors(), knn_matches, 2);
@@ -33,18 +36,23 @@ std::vector<cv::DMatch> match_features(const Frame &prevFrame, const Frame &fram
 
     std::vector<cv::DMatch> good_matches;
     for (const auto &match : knn_matches) {
-        // Ratio test
         if (matchedKeypoints.find(match[0].queryIdx) != matchedKeypoints.end() ||
             matchedKeypoints.find(match[0].trainIdx) != matchedKeypoints.end()) {
             continue;
         }
 
-        if (match[0].distance < 0.75 * match[1].distance && match[0].distance < 32) {
+        if (cv::norm(prevFrame.get_keypoint(match[0].trainIdx).pt - frame.get_keypoint(match[0].queryIdx).pt) < MAX_PROJ_ERROR) {
+            continue;
+        }
+
+        if (match[0].distance < 0.75 * match[1].distance && match[0].distance < MIN_ORB_DISTANCE) {
             good_matches.push_back(match[0]);
             matchedKeypoints.insert(match[0].queryIdx);
             matchedKeypoints.insert(match[0].trainIdx);
         }
     }
+
+    std::cout << "Keypoint matches: " << good_matches.size() << std::endl;
 
     return good_matches;
 }
@@ -73,7 +81,7 @@ PoseEstimate estimate_pose(const Frame &prev_frame, const Frame &frame, const Ca
         }
         filteredMatches.push_back(matches[i]);
     }
-    std::cout << "Keypoint matches: " << filteredMatches.size() << std::endl;
+    std::cout << "Inlier keypoints: " << filteredMatches.size() << std::endl;
 
     cv::recoverPose(E, from_points, to_points, camera.get_intrinsic_matrix(), R, t, inliers);
 
