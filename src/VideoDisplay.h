@@ -15,4 +15,6 @@ void draw_matches(const Frame &prevFrame, const Frame &frame, const std::vector<
 
 void draw_correspondences(const MapPoint &point);
 
+void draw_features(const Frame &frame);
+
 };

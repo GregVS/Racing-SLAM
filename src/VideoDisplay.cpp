@@ -56,4 +56,13 @@ void draw_correspondences(const MapPoint &point)
     std::cout << "--------------------------------" << std::endl;
 }
 
+void draw_features(const Frame &frame)
+{
+    cv::Mat frame_image = frame.get_image().clone();
+    cv::drawKeypoints(frame_image, frame.get_keypoints(), frame_image, cv::Scalar(0, 255, 0),
+                       cv::DrawMatchesFlags::DEFAULT);
+    cv::imshow("Video", frame_image);
+    cv::waitKey(0);
+}
+
 };
