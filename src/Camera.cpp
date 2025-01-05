@@ -1,12 +1,19 @@
 #include "Camera.h"
 
-namespace slam
-{
+namespace slam {
 
-Camera::Camera(cv::Mat K, int width, int height)
-        : m_K(K)
-        , m_width(width)
-        , m_height(height)
+static cv::Mat intrinsic_from_focal_len(float focal_len, int width, int height)
+{
+    cv::Mat K = cv::Mat::eye(3, 3, CV_64F);
+    K.at<double>(0, 0) = focal_len;
+    K.at<double>(1, 1) = focal_len;
+    K.at<double>(0, 2) = width / 2;
+    K.at<double>(1, 2) = height / 2;
+    return K;
+}
+
+Camera::Camera(float focal_len, int width, int height)
+    : m_K(intrinsic_from_focal_len(focal_len, width, height)), m_width(width), m_height(height)
 {
 }
 
@@ -27,7 +34,9 @@ cv::Point3f Camera::to_camera_coordinates(const cv::Point3f &point, const cv::Ma
 
     cv::Mat cameraPoint = pose * pointMat;
     cameraPoint /= cameraPoint.at<double>(3, 0);
-    return cv::Point3f(cameraPoint.at<double>(0, 0), cameraPoint.at<double>(1, 0), cameraPoint.at<double>(2, 0));
+    return cv::Point3f(cameraPoint.at<double>(0, 0),
+                       cameraPoint.at<double>(1, 0),
+                       cameraPoint.at<double>(2, 0));
 }
 
 cv::Point2f Camera::to_image_coordinates(const cv::Point3f &point, const cv::Mat &pose) const
@@ -44,24 +53,15 @@ cv::Point2f Camera::to_image_coordinates(const cv::Point3f &point, const cv::Mat
     return cv::Point2f(imagePoint.at<double>(0, 0), imagePoint.at<double>(1, 0));
 }
 
-int Camera::get_width() const
+int Camera::get_width() const { return m_width; }
+
+int Camera::get_height() const { return m_height; }
+
+const cv::Mat &Camera::get_intrinsic_matrix() const { return m_K; }
+
+bool Camera::is_visible(const cv::Point2f &point) const
 {
-    return m_width;
+    return point.x >= 0 && point.x < m_width && point.y >= 0 && point.y < m_height;
 }
 
-int Camera::get_height() const
-{
-    return m_height;
-}
-
-const cv::Mat &Camera::get_intrinsic_matrix() const
-{
-    return m_K;
-}
-
-bool within_frame(const cv::Point2f &point, const Camera &camera)
-{
-    return point.x >= 0 && point.x < camera.get_width() && point.y >= 0 && point.y < camera.get_height();
-}
-
-};
+}; // namespace slam

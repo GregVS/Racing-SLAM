@@ -12,7 +12,7 @@ void match_map_points(Map &map, Frame &frame)
         auto point2D = map.get_camera().to_image_coordinates(point.get_position(), frame.get_pose());
 
         // Check if point is in frame
-        if (!within_frame(point2D, map.get_camera()) || point.is_observed_by(&frame)) {
+        if (!map.get_camera().is_visible(point2D) || point.is_observed_by(&frame)) {
             continue;
         }
 

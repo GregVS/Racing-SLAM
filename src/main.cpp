@@ -27,13 +27,7 @@ int main(int argc, char *argv[])
 
         int W = 1920;
         int H = 1080;
-        cv::Mat K = cv::Mat::eye(3, 3, CV_64F);
-        K.at<double>(0, 0) = 800;
-        K.at<double>(1, 1) = 800;
-        K.at<double>(0, 2) = W / 2;
-        K.at<double>(1, 2) = H / 2;
-
-        slam::Camera camera{ K, W, H };
+        slam::Camera camera(1000, W, H);
 
         slam::Map map(camera);
 
