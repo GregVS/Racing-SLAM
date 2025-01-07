@@ -20,37 +20,49 @@ Camera::Camera(float focal_len, int width, int height)
 cv::Mat Camera::get_projection_matrix(const cv::Mat &pose) const
 {
     cv::Mat E = pose.inv();
-    cv::Mat projectionMatrix = m_K * E.rowRange(0, 3);
-    return projectionMatrix;
+    cv::Mat projection_matrix = m_K * E.rowRange(0, 3);
+    return projection_matrix;
+}
+
+cv::Point2f Camera::normalize(const cv::Point2f &point) const
+{
+    cv::Mat point_mat = cv::Mat(3, 1, CV_64F);
+    point_mat.at<double>(0, 0) = point.x;
+    point_mat.at<double>(1, 0) = point.y;
+    point_mat.at<double>(2, 0) = 1;
+
+    cv::Mat normalized_point = m_K.inv() * point_mat;
+    return cv::Point2f(normalized_point.at<double>(0, 0) / normalized_point.at<double>(2, 0),
+                       normalized_point.at<double>(1, 0) / normalized_point.at<double>(2, 0));
 }
 
 cv::Point3f Camera::to_camera_coordinates(const cv::Point3f &point, const cv::Mat &pose) const
 {
-    cv::Mat pointMat = cv::Mat(4, 1, CV_64F);
-    pointMat.at<double>(0, 0) = point.x;
-    pointMat.at<double>(1, 0) = point.y;
-    pointMat.at<double>(2, 0) = point.z;
-    pointMat.at<double>(3, 0) = 1;
+    cv::Mat point_mat = cv::Mat(4, 1, CV_64F);
+    point_mat.at<double>(0, 0) = point.x;
+    point_mat.at<double>(1, 0) = point.y;
+    point_mat.at<double>(2, 0) = point.z;
+    point_mat.at<double>(3, 0) = 1;
 
-    cv::Mat cameraPoint = pose * pointMat;
-    cameraPoint /= cameraPoint.at<double>(3, 0);
-    return cv::Point3f(cameraPoint.at<double>(0, 0),
-                       cameraPoint.at<double>(1, 0),
-                       cameraPoint.at<double>(2, 0));
+    cv::Mat cam_point = pose * point_mat;
+    cam_point /= cam_point.at<double>(3, 0);
+    return cv::Point3f(cam_point.at<double>(0, 0),
+                       cam_point.at<double>(1, 0),
+                       cam_point.at<double>(2, 0));
 }
 
 cv::Point2f Camera::to_image_coordinates(const cv::Point3f &point, const cv::Mat &pose) const
 {
-    cv::Mat pointMat = cv::Mat(4, 1, CV_64F);
-    pointMat.at<double>(0, 0) = point.x;
-    pointMat.at<double>(1, 0) = point.y;
-    pointMat.at<double>(2, 0) = point.z;
-    pointMat.at<double>(3, 0) = 1;
+    cv::Mat point_mat = cv::Mat(4, 1, CV_64F);
+    point_mat.at<double>(0, 0) = point.x;
+    point_mat.at<double>(1, 0) = point.y;
+    point_mat.at<double>(2, 0) = point.z;
+    point_mat.at<double>(3, 0) = 1;
 
-    cv::Mat projectionMatrix = get_projection_matrix(pose);
-    cv::Mat imagePoint = projectionMatrix * pointMat;
-    imagePoint /= imagePoint.at<double>(2, 0);
-    return cv::Point2f(imagePoint.at<double>(0, 0), imagePoint.at<double>(1, 0));
+    cv::Mat projection_matrix = get_projection_matrix(pose);
+    cv::Mat image_point = projection_matrix * point_mat;
+    image_point /= image_point.at<double>(2, 0);
+    return cv::Point2f(image_point.at<double>(0, 0), image_point.at<double>(1, 0));
 }
 
 int Camera::get_width() const { return m_width; }

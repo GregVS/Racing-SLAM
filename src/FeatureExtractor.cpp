@@ -4,7 +4,8 @@ namespace slam {
 
 FeatureExtractor::FeatureExtractor() {}
 
-ExtractedFeatures FeatureExtractor::extract_features(const cv::Mat &image, const cv::InputArray &mask)
+ExtractedFeatures FeatureExtractor::extract_features(const cv::Mat &image,
+                                                     const cv::InputArray &mask) const
 {
     cv::Mat gray_image;
     cv::cvtColor(image, gray_image, cv::COLOR_BGR2GRAY);
@@ -13,7 +14,7 @@ ExtractedFeatures FeatureExtractor::extract_features(const cv::Mat &image, const
     cv::Mat descriptors;
 
     // Feature extraction and description
-    cv::Ptr<cv::Feature2D> extractor = cv::GFTTDetector::create(300, 0.01, 10);
+    cv::Ptr<cv::Feature2D> extractor = cv::GFTTDetector::create(500, 0.01, 10);
     extractor->detect(gray_image, keypoints, mask);
 
     for (auto &keypoint : keypoints) {
@@ -27,7 +28,7 @@ ExtractedFeatures FeatureExtractor::extract_features(const cv::Mat &image, const
 }
 
 std::vector<FeatureMatch> FeatureExtractor::match_features(const ExtractedFeatures &prev_features,
-                                                           const ExtractedFeatures &features)
+                                                           const ExtractedFeatures &features) const
 {
     std::vector<std::vector<cv::DMatch>> matches;
     auto matcher = cv::BFMatcher::create(cv::NORM_HAMMING, true);
@@ -45,7 +46,7 @@ std::vector<FeatureMatch> FeatureExtractor::match_features(const ExtractedFeatur
 FilteredMatches FeatureExtractor::filter_matches(const std::vector<FeatureMatch> &matches,
                                                  const ExtractedFeatures &prev_features,
                                                  const ExtractedFeatures &features,
-                                                 const Camera &camera)
+                                                 const Camera &camera) const
 {
     std::vector<cv::Point2f> matched_points_from, matched_points_to;
     for (const auto &match : matches) {

@@ -10,6 +10,7 @@ class Camera {
 
     cv::Point3f to_camera_coordinates(const cv::Point3f &point, const cv::Mat &pose) const;
     cv::Point2f to_image_coordinates(const cv::Point3f &point, const cv::Mat &pose) const;
+    cv::Point2f normalize(const cv::Point2f &point) const;
 
     cv::Mat get_projection_matrix(const cv::Mat &pose) const;
     const cv::Mat &get_intrinsic_matrix() const;
