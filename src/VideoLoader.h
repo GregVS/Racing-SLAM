@@ -9,6 +9,7 @@ class VideoLoader {
     VideoLoader(const std::string &video_path);
 
     cv::Mat get_next_frame();
+    std::vector<cv::Mat> get_all_frames();
 
     int get_width() const;
     int get_height() const;

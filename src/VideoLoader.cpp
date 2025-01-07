@@ -11,6 +11,19 @@ cv::Mat VideoLoader::get_next_frame()
     return frame;
 }
 
+std::vector<cv::Mat> VideoLoader::get_all_frames()
+{
+    std::vector<cv::Mat> frames;
+    while (true) {
+        cv::Mat frame = get_next_frame();
+        if (frame.empty()) {
+            break;
+        }
+        frames.push_back(frame);
+    }
+    return frames;
+}
+
 int VideoLoader::get_width() const { return m_video_capture.get(cv::CAP_PROP_FRAME_WIDTH); }
 
 int VideoLoader::get_height() const { return m_video_capture.get(cv::CAP_PROP_FRAME_HEIGHT); }
