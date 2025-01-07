@@ -36,15 +36,19 @@ int main(int argc, char* argv[])
         frame->set_features(features);
 
         auto result_opt = initializer.try_initialize(frame);
-        if (!result_opt) {
-            std::cout << "Failed to initialize with frame " << i << std::endl;
-            continue;
+        if (result_opt) {
+            ref_frame = initializer.ref_frame();
+            query_frame = frame;
+            result = result_opt.value();
+            break;
         }
 
-        ref_frame = initializer.ref_frame();
-        query_frame = frame;
-        result = result_opt.value();
+        std::cout << "Failed to initialize with frame " << i << std::endl;
     }
+
+    std::cout << "Ref frame: " << ref_frame->index() << std::endl;
+    std::cout << "Query frame: " << query_frame->index() << std::endl;
+    std::cout << "Pose: " << result.pose.inverse() << std::endl;
 
     // Cycle through the two frames (press any key to cycle)
     auto selected_frame = ref_frame;

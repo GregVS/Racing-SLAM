@@ -3,14 +3,16 @@
 #include <unordered_set>
 
 #include "FeatureExtractor.h"
+#include "PoseEstimator.h"
 #include "VideoLoader.h"
 
-int main(int argc, char *argv[])
+int main(int argc, char* argv[])
 {
     std::string video_path = "videos/lime-rock-race.mp4";
 
     slam::VideoLoader video_loader(video_path);
     slam::FeatureExtractor feature_extractor;
+    slam::PoseEstimator pose_estimator;
     slam::Camera camera(914, video_loader.get_width(), video_loader.get_height());
 
     cv::Mat mask = cv::Mat::zeros(video_loader.get_height(), video_loader.get_width(), CV_8UC1);
@@ -26,11 +28,7 @@ int main(int argc, char *argv[])
         auto features = feature_extractor.extract_features(frame, mask);
 
         auto matches = feature_extractor.match_features(prev_features, features);
-        auto [filtered_matches, essential_matrix] =
-            feature_extractor.filter_matches(matches, prev_features, features, camera);
-
-        std::cout << matches.size() << " Matches, " << filtered_matches.size()
-                  << " Filtered matches" << std::endl;
+        auto pose_estimate = pose_estimator.estimate_pose(matches, prev_features, features, camera);
 
         std::vector<cv::KeyPoint> inliner_keypoints;
         std::vector<cv::KeyPoint> outlier_keypoints;
@@ -39,11 +37,13 @@ int main(int argc, char *argv[])
         {
             std::unordered_set<int> matched_indices; // includes outliers
             std::unordered_set<int> inliner_indices;
-            for (const auto &match : matches) {
+            for (const auto& match : matches) {
                 matched_indices.insert(match.query_index);
             }
-            for (int i = 0; i < filtered_matches.size(); i++) {
-                inliner_indices.insert(filtered_matches[i].query_index);
+            for (int i = 0; i < matches.size(); i++) {
+                if (pose_estimate.inliers[i] == 1) {
+                    inliner_indices.insert(matches[i].query_index);
+                }
             }
 
             for (int i = 0; i < features.keypoints.size(); i++) {
@@ -56,6 +56,11 @@ int main(int argc, char *argv[])
                 }
             }
         }
+
+        std::cout << "Inliers: " << inliner_keypoints.size()
+                  << " Outliers: " << outlier_keypoints.size()
+                  << " Unmatched: " << unmatched_keypoints.size() << std::endl;
+        std::cout << "Pose: " << pose_estimate.pose.inverse() << std::endl;
 
         // Draw the matched keypoints in green and the unmatched keypoints in red
         cv::Mat display_frame = frame.clone();
@@ -76,6 +81,8 @@ int main(int argc, char *argv[])
                           cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
         // Draw a line to the previous frame
         for (int i = 0; i < matches.size(); i++) {
+            if (pose_estimate.inliers[i] == 0) continue;
+
             cv::line(display_frame,
                      prev_features.keypoints.at(matches[i].train_index).pt,
                      features.keypoints.at(matches[i].query_index).pt,
@@ -83,7 +90,7 @@ int main(int argc, char *argv[])
                      1);
         }
         cv::imshow("frame", display_frame);
-        cv::waitKey(1);
+        cv::waitKey(0);
     }
 
     cv::destroyAllWindows();

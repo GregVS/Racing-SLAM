@@ -14,7 +14,7 @@ ExtractedFeatures FeatureExtractor::extract_features(const cv::Mat &image,
     cv::Mat descriptors;
 
     // Feature extraction and description
-    cv::Ptr<cv::Feature2D> extractor = cv::GFTTDetector::create(500, 0.01, 10);
+    cv::Ptr<cv::Feature2D> extractor = cv::GFTTDetector::create(1000, 0.01, 10);
     extractor->detect(gray_image, keypoints, mask);
 
     for (auto &keypoint : keypoints) {
@@ -41,36 +41,6 @@ std::vector<FeatureMatch> FeatureExtractor::match_features(const ExtractedFeatur
         }
     }
     return feature_matches;
-}
-
-FilteredMatches FeatureExtractor::filter_matches(const std::vector<FeatureMatch> &matches,
-                                                 const ExtractedFeatures &prev_features,
-                                                 const ExtractedFeatures &features,
-                                                 const Camera &camera) const
-{
-    std::vector<cv::Point2f> matched_points_from, matched_points_to;
-    for (const auto &match : matches) {
-        matched_points_from.push_back(prev_features.keypoints[match.train_index].pt);
-        matched_points_to.push_back(features.keypoints[match.query_index].pt);
-    }
-
-    std::vector<uchar> inliers;
-    cv::Mat E = cv::findEssentialMat(matched_points_from,
-                                     matched_points_to,
-                                     camera.get_intrinsic_matrix(),
-                                     cv::RANSAC,
-                                     0.999,
-                                     0.1,
-                                     inliers);
-
-    std::vector<FeatureMatch> filtered_matches;
-    for (int i = 0; i < inliers.size(); i++) {
-        if (inliers[i] == 0) {
-            continue;
-        }
-        filtered_matches.push_back(matches[i]);
-    }
-    return {filtered_matches, E};
 }
 
 } // namespace slam

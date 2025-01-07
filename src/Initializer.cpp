@@ -1,4 +1,6 @@
+#define GLM_ENABLE_EXPERIMENTAL
 #include "Initializer.h"
+#include <glm/gtx/io.hpp>
 
 namespace slam {
 
@@ -22,7 +24,8 @@ std::optional<InitializerResult> Initializer::try_initialize(std::shared_ptr<Fra
 {
     // Check the frame has enough keypoints
     if (frame->features().keypoints.size() < MIN_KEYPOINTS) {
-        std::cout << "Frame has too few keypoints: " << frame->features().keypoints.size() << std::endl;
+        std::cout << "Frame has too few keypoints: " << frame->features().keypoints.size()
+                  << std::endl;
         return std::nullopt;
     } else if (!m_ref_frame || m_ref_frame->features().keypoints.size() < MIN_KEYPOINTS) {
         std::cout << "Ref frame has too few keypoints" << std::endl;
@@ -39,35 +42,34 @@ std::optional<InitializerResult> Initializer::try_initialize(std::shared_ptr<Fra
     }
 
     // Filter matches and check if there are enough filtered matches
-    auto [filtered_matches, essential_matrix] =
-        m_feature_extractor.filter_matches(matches,
-                                           m_ref_frame->features(),
-                                           frame->features(),
-                                           m_camera);
+    auto pose_estimate = m_pose_estimator.estimate_pose(matches,
+                                                        m_ref_frame->features(),
+                                                        frame->features(),
+                                                        m_camera);
 
-    if (filtered_matches.size() < MIN_FILTERED_MATCHES) {
-        std::cout << "Frame has too few filtered matches: " << filtered_matches.size() << std::endl;
-        increment_ref_chances(frame);
-        return std::nullopt;
-    }
-
-    // Ensure that there is enough distance between the matches
+    std::vector<FeatureMatch> inlier_matches;
     int good_matches = 0;
-    for (const auto& match : filtered_matches) {
-        auto ref_keypoint = m_ref_frame->features().keypoints.at(match.train_index);
-        auto curr_keypoint = frame->features().keypoints.at(match.query_index);
+    for (int i = 0; i < matches.size(); i++) {
+        if (pose_estimate.inliers[i] == 0)
+            continue;
+
+        inlier_matches.push_back(matches[i]);
+        auto ref_keypoint = m_ref_frame->features().keypoints.at(matches[i].train_index);
+        auto curr_keypoint = frame->features().keypoints.at(matches[i].query_index);
         auto distance = cv::norm(ref_keypoint.pt - curr_keypoint.pt);
         if (distance > GOOD_MATCH_DISTANCE) {
             good_matches++;
         }
     }
-    if ((float)good_matches / filtered_matches.size() < GOOD_MATCH_RATIO) {
-        std::cout << "Frame has too few good matches: " << good_matches << " / " << filtered_matches.size() << std::endl;
+
+    if (good_matches < MIN_GOOD_MATCHES) {
+        std::cout << "Frame has too few good matches: " << good_matches << " / " << matches.size()
+                  << std::endl;
         increment_ref_chances(frame);
         return std::nullopt;
     }
 
-    return InitializerResult{essential_matrix, filtered_matches};
+    return InitializerResult{inlier_matches, pose_estimate.pose};
 }
 
 const std::shared_ptr<Frame>& Initializer::ref_frame() const { return m_ref_frame; }

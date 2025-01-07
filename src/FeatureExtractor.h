@@ -36,11 +36,6 @@ class FeatureExtractor {
     std::vector<FeatureMatch> match_features(const ExtractedFeatures &prev_features,
                                              const ExtractedFeatures &features) const;
 
-    FilteredMatches filter_matches(const std::vector<FeatureMatch> &matches,
-                                   const ExtractedFeatures &prev_features,
-                                   const ExtractedFeatures &features,
-                                   const Camera &camera) const;
-
   private:
     static constexpr int MAX_ORB_DISTANCE = 32;
 };
