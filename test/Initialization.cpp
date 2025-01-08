@@ -4,6 +4,7 @@
 
 #include "FeatureExtractor.h"
 #include "Initializer.h"
+#include "Triangulation.h"
 #include "VideoLoader.h"
 #include "Visualization.h"
 
@@ -51,8 +52,18 @@ int main(int argc, char* argv[])
     std::cout << "Query frame: " << query_frame->index() << std::endl;
     std::cout << "Pose: " << result.pose.inverse() << std::endl;
 
+    // Triangulate the points
+    auto points3D = slam::triangulate_features(ref_frame->features(),
+                                               query_frame->features(),
+                                               result.inlier_matches,
+                                               Eigen::Matrix4f::Identity(),
+                                               result.pose,
+                                               camera);
+    std::cout << "Triangulated points: " << points3D.size() << std::endl;
+
     slam::Visualization visualization("Initialization");
     visualization.set_camera_poses({Eigen::Matrix4f::Identity(), result.pose});
+    visualization.set_points(points3D);
     std::thread visualization_thread([&]() { visualization.run(); });
 
     // Cycle through the two frames (press any key to cycle)

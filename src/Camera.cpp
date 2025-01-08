@@ -2,13 +2,13 @@
 
 namespace slam {
 
-static cv::Mat intrinsic_from_focal_len(float focal_len, int width, int height)
+static Eigen::Matrix3f intrinsic_from_focal_len(float focal_len, int width, int height)
 {
-    cv::Mat K = cv::Mat::eye(3, 3, CV_64F);
-    K.at<double>(0, 0) = focal_len;
-    K.at<double>(1, 1) = focal_len;
-    K.at<double>(0, 2) = width / 2;
-    K.at<double>(1, 2) = height / 2;
+    Eigen::Matrix3f K = Eigen::Matrix3f::Identity();
+    K(0, 0) = focal_len;
+    K(1, 1) = focal_len;
+    K(0, 2) = width / 2;
+    K(1, 2) = height / 2;
     return K;
 }
 
@@ -21,6 +21,30 @@ int Camera::get_width() const { return m_width; }
 
 int Camera::get_height() const { return m_height; }
 
-const cv::Mat& Camera::get_intrinsic_matrix() const { return m_K; }
+const Eigen::Matrix3f& Camera::get_intrinsic_matrix() const { return m_K; }
+
+cv::Mat projection_mat_cv(const Camera& camera, const Eigen::Matrix4f& pose)
+{
+    Eigen::Matrix<float, 3, 4> projection = camera.get_intrinsic_matrix() * pose.block<3, 4>(0, 0);
+    cv::Mat projection_cv = cv::Mat(3, 4, CV_32F);
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 4; j++) {
+            projection_cv.at<float>(i, j) = projection(i, j);
+        }
+    }
+    return projection_cv;
+}
+
+cv::Mat intrinsic_mat_cv(const Camera& camera)
+{
+    Eigen::Matrix<float, 3, 3> intrinsic = camera.get_intrinsic_matrix();
+    cv::Mat intrinsic_cv = cv::Mat(3, 3, CV_32F);
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            intrinsic_cv.at<float>(i, j) = intrinsic(i, j);
+        }
+    }
+    return intrinsic_cv;
+}
 
 }; // namespace slam

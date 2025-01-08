@@ -58,6 +58,22 @@ void Visualization::set_camera_poses(const std::vector<Eigen::Matrix4f>& poses)
     m_poses = poses;
 }
 
+void Visualization::set_points(const std::vector<Eigen::Vector3f>& points)
+{
+    std::lock_guard<std::mutex> lock(m_data_mutex);
+    m_points = points;
+}
+
+void Visualization::draw_points(const std::vector<Eigen::Vector3f>& points)
+{
+    glPointSize(5);
+    glBegin(GL_POINTS);
+    for (const auto& point : points) {
+        glVertex3f(point[0], point[1], point[2]);
+    }
+    glEnd();
+}
+
 void Visualization::run()
 {
     initialize();
@@ -74,6 +90,7 @@ void Visualization::run()
             for (const auto& pose : m_poses) {
                 draw_camera_pose(pose);
             }
+            draw_points(m_points);
         }
 
         pangolin::FinishFrame();

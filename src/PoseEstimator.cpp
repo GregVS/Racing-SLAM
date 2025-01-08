@@ -9,7 +9,7 @@ namespace slam {
 
 static cv::Mat cv_Rt(const cv::Mat& R, const cv::Mat& t)
 {
-    cv::Mat pose = cv::Mat::eye(4, 4, CV_64F);
+    cv::Mat pose = cv::Mat::eye(4, 4, CV_32F);
     R.copyTo(pose(cv::Rect(0, 0, 3, 3)));
     t.copyTo(pose(cv::Rect(3, 0, 1, 3)));
     return pose;
@@ -33,18 +33,18 @@ static PoseEstimate recover_pose_from_essential(const cv::Mat& E,
     std::vector<uchar> best_inliers;
     for (int i = 0; i < pose_candidates.size(); i++) {
         cv::Mat triangulated_pts;
-        cv::triangulatePoints(camera_matrix * cv::Mat::eye(3, 4, CV_64F),
+        cv::triangulatePoints(camera_matrix * cv::Mat::eye(3, 4, CV_32F),
                               camera_matrix * pose_candidates[i].rowRange(0, 3),
                               points_from,
                               points_to,
                               triangulated_pts);
-        triangulated_pts.convertTo(triangulated_pts, CV_64F);
+        triangulated_pts.convertTo(triangulated_pts, CV_32F);
 
         for (int j = 0; j < triangulated_pts.cols; j++) {
             triangulated_pts.col(j) /= triangulated_pts.at<double>(3, j);
         }
 
-        cv::Mat cam1_points = cv::Mat::eye(3, 4, CV_64F) * triangulated_pts;
+        cv::Mat cam1_points = cv::Mat::eye(3, 4, CV_32F) * triangulated_pts;
         cv::Mat cam2_points = pose_candidates[i].rowRange(0, 3) * triangulated_pts;
 
         int visible_points = 0;
@@ -84,14 +84,14 @@ PoseEstimate PoseEstimator::estimate_pose(const std::vector<FeatureMatch>& match
     std::vector<uchar> inliers;
     cv::Mat E = cv::findEssentialMat(matched_points_from,
                                      matched_points_to,
-                                     camera.get_intrinsic_matrix(),
+                                     intrinsic_mat_cv(camera),
                                      cv::RANSAC,
                                      0.999,
                                      1.0,
                                      inliers);
 
     return recover_pose_from_essential(E,
-                                       camera.get_intrinsic_matrix(),
+                                       intrinsic_mat_cv(camera),
                                        matched_points_from,
                                        matched_points_to,
                                        inliers);
