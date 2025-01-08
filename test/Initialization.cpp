@@ -5,6 +5,7 @@
 #include "FeatureExtractor.h"
 #include "Initializer.h"
 #include "VideoLoader.h"
+#include "Visualization.h"
 
 /**
  * Finds two frames that will be used to initialize the system and displays them along with their
@@ -50,6 +51,10 @@ int main(int argc, char* argv[])
     std::cout << "Query frame: " << query_frame->index() << std::endl;
     std::cout << "Pose: " << result.pose.inverse() << std::endl;
 
+    slam::Visualization visualization("Initialization");
+    visualization.set_camera_poses({Eigen::Matrix4f::Identity(), result.pose});
+    std::thread visualization_thread([&]() { visualization.run(); });
+
     // Cycle through the two frames (press any key to cycle)
     auto selected_frame = ref_frame;
     while (true) {
@@ -83,6 +88,7 @@ int main(int argc, char* argv[])
         cv::waitKey(0);
     }
 
+    visualization_thread.join();
     cv::destroyAllWindows();
     return 0;
 }

@@ -38,7 +38,7 @@ class Initializer {
     static constexpr int MIN_KEYPOINTS = 100;
     static constexpr int MIN_MATCHES = 100;
     static constexpr int MAX_REF_CHANCES = 5;
-    static constexpr float GOOD_MATCH_DISTANCE = 10.0;
+    static constexpr float GOOD_MATCH_DISTANCE = 15.0;
     static constexpr int MIN_GOOD_MATCHES = 50;
 };
 
