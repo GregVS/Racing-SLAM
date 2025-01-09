@@ -37,7 +37,7 @@ void Visualization::initialize(int width, int height)
 
 void Visualization::draw_camera_pose(const Eigen::Matrix4f& pose)
 {
-    const float camera_size = 1.0f;
+    const float camera_size = 0.4f;
     const Eigen::Matrix4f inverse_pose = pose.inverse();
 
     glPushMatrix();
