@@ -10,7 +10,7 @@ namespace slam {
 
 struct PoseEstimate {
     Eigen::Matrix4f pose;
-    std::vector<u_char> inliers;
+    std::vector<FeatureMatch> inlier_matches;
 };
 
 class PoseEstimator {

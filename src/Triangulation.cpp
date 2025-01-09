@@ -1,34 +1,66 @@
-#include <Eigen/Dense>
-#include <opencv2/opencv.hpp>
-#include <opencv2/core/eigen.hpp>
-
 #include "Triangulation.h"
+
+#include <Eigen/Dense>
+#include <opencv2/core/eigen.hpp>
+#include <opencv2/opencv.hpp>
 
 namespace slam {
 
-std::vector<Eigen::Vector3f> triangulate_features(
-    const ExtractedFeatures& features1,
-    const ExtractedFeatures& features2,
-    const std::vector<FeatureMatch>& matches,
-    const Eigen::Matrix4f& pose1,
-    const Eigen::Matrix4f& pose2,
-    const Camera& camera)
+static cv::Mat extrinsic_mat_cv(const Eigen::Matrix4f& extrinsic)
 {
-    // Collect the keypoints from the matches
-    std::vector<cv::Point2f> points1;
-    std::vector<cv::Point2f> points2;
-    for (const auto& match : matches) {
-        points1.push_back(features1.keypoints[match.train_index].pt);
-        points2.push_back(features2.keypoints[match.query_index].pt);
+    cv::Mat extrinsic_cv = cv::Mat(3, 4, CV_32F);
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 4; j++) {
+            extrinsic_cv.at<float>(i, j) = extrinsic(i, j);
+        }
     }
+    return extrinsic_cv;
+}
 
+std::pair<std::vector<Eigen::Vector2f>, std::vector<Eigen::Vector2f>>
+get_matching_points(const ExtractedFeatures& features1,
+                    const ExtractedFeatures& features2,
+                    const std::vector<FeatureMatch>& matches)
+{
+    std::vector<Eigen::Vector2f> points1;
+    std::vector<Eigen::Vector2f> points2;
+    for (int i = 0; i < matches.size(); i++) {
+        const auto& p1_cv = features1.keypoints[matches[i].train_index].pt;
+        const auto& p2_cv = features2.keypoints[matches[i].query_index].pt;
+
+        points1.push_back(Eigen::Vector2f(p1_cv.x, p1_cv.y));
+        points2.push_back(Eigen::Vector2f(p2_cv.x, p2_cv.y));
+    }
+    return std::make_pair(points1, points2);
+}
+
+static float reprojection_error(const cv::Point2f& point, const cv::Mat& projection)
+{
+    return (point.x - projection.at<float>(0, 0)) * (point.x - projection.at<float>(0, 0)) +
+           (point.y - projection.at<float>(1, 0)) * (point.y - projection.at<float>(1, 0));
+}
+
+std::vector<Eigen::Vector3f> triangulate_points(const std::vector<Eigen::Vector2f>& points1,
+                                                const std::vector<Eigen::Vector2f>& points2,
+                                                const Eigen::Matrix4f& pose1,
+                                                const Eigen::Matrix4f& pose2,
+                                                const Camera& camera)
+{
     // Convert the projection matrices to OpenCV format
     cv::Mat projection1_cv = projection_mat_cv(camera, pose1);
     cv::Mat projection2_cv = projection_mat_cv(camera, pose2);
 
+    // Convert the points to OpenCV format
+    std::vector<cv::Point2f> points1_cv;
+    std::vector<cv::Point2f> points2_cv;
+    for (int i = 0; i < points1.size(); i++) {
+        points1_cv.push_back(cv::Point2f(points1[i][0], points1[i][1]));
+        points2_cv.push_back(cv::Point2f(points2[i][0], points2[i][1]));
+    }
+
     // Triangulate the points
     cv::Mat points4D;
-    cv::triangulatePoints(projection1_cv, projection2_cv, points1, points2, points4D);
+    cv::triangulatePoints(projection1_cv, projection2_cv, points1_cv, points2_cv, points4D);
 
     // Convert the points to 3D and filter
     std::vector<Eigen::Vector3f> points3D;
@@ -36,16 +68,30 @@ std::vector<Eigen::Vector3f> triangulate_features(
         cv::Mat point = points4D.col(i);
         point /= point.at<float>(3, 0);
 
-        cv::Mat cam1_points = projection1_cv * point;
-        cv::Mat cam2_points = projection2_cv * point;
+        cv::Mat cam1_point = extrinsic_mat_cv(pose1) * point;
+        cv::Mat cam2_point = extrinsic_mat_cv(pose2) * point;
 
         // Filter points that are behind either camera
-        if (cam1_points.at<float>(2, 0) < 0 || cam2_points.at<float>(2, 0) < 0) {
+        if (cam1_point.at<float>(2, 0) < 0 || cam2_point.at<float>(2, 0) < 0) {
             continue;
         }
-        std::cout << "point: " << point.at<float>(0, 0) << ", " << point.at<float>(1, 0) << ", " << point.at<float>(2, 0) << std::endl;
 
-        points3D.push_back(Eigen::Vector3f(point.at<float>(0, 0), point.at<float>(1, 0), point.at<float>(2, 0)));
+        // Convert to image coordinates
+        cv::Mat image1_point = intrinsic_mat_cv(camera) * cam1_point;
+        cv::Mat image2_point = intrinsic_mat_cv(camera) * cam2_point;
+
+        image1_point /= image1_point.at<float>(2, 0);
+        image2_point /= image2_point.at<float>(2, 0);
+
+        // Filter points with poor reprojection error
+        auto reprojection_error1 = reprojection_error(points1_cv[i], image1_point);
+        auto reprojection_error2 = reprojection_error(points2_cv[i], image2_point);
+        if (reprojection_error1 > 2 || reprojection_error2 > 2) {
+            continue;
+        }
+
+        points3D.push_back(
+            Eigen::Vector3f(point.at<float>(0, 0), point.at<float>(1, 0), point.at<float>(2, 0)));
     }
 
     return points3D;

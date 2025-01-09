@@ -15,11 +15,12 @@ static cv::Mat cv_Rt(const cv::Mat& R, const cv::Mat& t)
     return pose;
 }
 
-static PoseEstimate recover_pose_from_essential(const cv::Mat& E,
-                                                const cv::Mat& camera_matrix,
-                                                const std::vector<cv::Point2f>& points_from,
-                                                const std::vector<cv::Point2f>& points_to,
-                                                const std::vector<uchar>& inliers)
+static std::pair<Eigen::Matrix4f, std::vector<u_char>>
+recover_pose_from_essential(const cv::Mat& E,
+                            const cv::Mat& camera_matrix,
+                            const std::vector<cv::Point2f>& points_from,
+                            const std::vector<cv::Point2f>& points_to,
+                            const std::vector<u_char>& inliers)
 {
     cv::Mat R1, R2, t;
     cv::decomposeEssentialMat(E, R1, R2, t);
@@ -67,7 +68,7 @@ static PoseEstimate recover_pose_from_essential(const cv::Mat& E,
 
     Eigen::Matrix4f pose;
     cv::cv2eigen(pose_candidates[best_pose_index], pose);
-    return PoseEstimate{pose, best_inliers};
+    return std::make_pair(pose, best_inliers);
 }
 
 PoseEstimate PoseEstimator::estimate_pose(const std::vector<FeatureMatch>& matches,
@@ -81,20 +82,27 @@ PoseEstimate PoseEstimator::estimate_pose(const std::vector<FeatureMatch>& match
         matched_points_to.push_back(features.keypoints[match.query_index].pt);
     }
 
-    std::vector<uchar> inliers;
+    std::vector<uchar> essential_inliers;
     cv::Mat E = cv::findEssentialMat(matched_points_from,
                                      matched_points_to,
                                      intrinsic_mat_cv(camera),
                                      cv::RANSAC,
                                      0.999,
                                      1.0,
-                                     inliers);
+                                     essential_inliers);
 
-    return recover_pose_from_essential(E,
-                                       intrinsic_mat_cv(camera),
-                                       matched_points_from,
-                                       matched_points_to,
-                                       inliers);
+    auto [pose, triangulated_inliers] = recover_pose_from_essential(E,
+                                                                    intrinsic_mat_cv(camera),
+                                                                    matched_points_from,
+                                                                    matched_points_to,
+                                                                    essential_inliers);
+    std::vector<FeatureMatch> inlier_matches;
+    for (int i = 0; i < triangulated_inliers.size(); i++) {
+        if (triangulated_inliers[i]) {
+            inlier_matches.push_back(matches[i]);
+        }
+    }
+    return PoseEstimate{pose, inlier_matches};
 }
 
 } // namespace slam

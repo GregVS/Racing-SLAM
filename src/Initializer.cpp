@@ -47,13 +47,8 @@ std::optional<InitializerResult> Initializer::try_initialize(std::shared_ptr<Fra
                                                         frame->features(),
                                                         m_camera);
 
-    std::vector<FeatureMatch> inlier_matches;
     int good_matches = 0;
     for (int i = 0; i < matches.size(); i++) {
-        if (pose_estimate.inliers[i] == 0)
-            continue;
-
-        inlier_matches.push_back(matches[i]);
         auto ref_keypoint = m_ref_frame->features().keypoints.at(matches[i].train_index);
         auto curr_keypoint = frame->features().keypoints.at(matches[i].query_index);
         auto distance = cv::norm(ref_keypoint.pt - curr_keypoint.pt);
@@ -69,7 +64,7 @@ std::optional<InitializerResult> Initializer::try_initialize(std::shared_ptr<Fra
         return std::nullopt;
     }
 
-    return InitializerResult{inlier_matches, pose_estimate.pose};
+    return InitializerResult{pose_estimate.inlier_matches, pose_estimate.pose};
 }
 
 const std::shared_ptr<Frame>& Initializer::ref_frame() const { return m_ref_frame; }
