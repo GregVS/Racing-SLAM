@@ -1,4 +1,5 @@
 #include "Features.h"
+
 #include "Camera.h"
 #include "Frame.h"
 #include "KeyFrame.h"
@@ -45,9 +46,9 @@ std::vector<FeatureMatch> match_features(const ExtractedFeatures& prev_features,
 }
 
 std::vector<MapPointMatch> match_features(const Frame& frame,
-                                                 const Camera& camera,
-                                                 const Map& map,
-                                                 const Eigen::Matrix4f& pose)
+                                          const Camera& camera,
+                                          const Map& map,
+                                          const Eigen::Matrix4f& pose)
 {
     std::vector<MapPointMatch> matches;
     for (const auto& point : map) {
@@ -59,18 +60,28 @@ std::vector<MapPointMatch> match_features(const Frame& frame,
         // Compare to features in the region
         auto feature_indices = frame.features_in_region(image_point, 15);
         std::cout << "Number of features in region: " << feature_indices.size() << std::endl;
+
+        // Find the closest match
+        size_t best_match_index = 0;
+        float best_match_distance = MAX_ORB_DISTANCE_TO_MAP;
+
         for (const auto& index : feature_indices) {
             const auto& descriptor = frame.descriptor(index);
 
             // Ensure it is within the distance threshold
             for (const auto& [obs_keyframe, obs_index] : point.observations()) {
-                auto orb_dist =
-                    cv::norm(descriptor, obs_keyframe->descriptor(obs_index), cv::NORM_HAMMING);
-                if (orb_dist < MAX_ORB_DISTANCE_TO_MAP) {
-                    matches.push_back(MapPointMatch{point, index});
-                    break;
+                auto orb_dist = cv::norm(descriptor,
+                                         obs_keyframe->descriptor(obs_index),
+                                         cv::NORM_HAMMING);
+                if (orb_dist < best_match_distance) {
+                    best_match_distance = orb_dist;
+                    best_match_index = index;
                 }
             }
+        }
+
+        if (best_match_distance < MAX_ORB_DISTANCE_TO_MAP) {
+            matches.push_back(MapPointMatch{point, best_match_index});
         }
     }
 
