@@ -2,7 +2,6 @@
 
 #include "Camera.h"
 #include "Frame.h"
-#include "KeyFrame.h"
 #include "Map.h"
 
 namespace slam::features {
@@ -59,7 +58,6 @@ std::vector<MapPointMatch> match_features(const Frame& frame,
 
         // Compare to features in the region
         auto feature_indices = frame.features_in_region(image_point, 15);
-        std::cout << "Number of features in region: " << feature_indices.size() << std::endl;
 
         // Find the closest match
         size_t best_match_index = 0;

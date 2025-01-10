@@ -5,19 +5,6 @@
 
 namespace slam {
 
-KDTree2D::KDTree2D() : root(nullptr) {}
-
-KDTree2D::~KDTree2D() { delete_tree(root); }
-
-void KDTree2D::delete_tree(Node* node)
-{
-    if (node) {
-        delete_tree(node->left);
-        delete_tree(node->right);
-        delete node;
-    }
-}
-
 void KDTree2D::build(const std::vector<Eigen::Vector2f>& inputPoints)
 {
     points = inputPoints;
@@ -28,7 +15,8 @@ void KDTree2D::build(const std::vector<Eigen::Vector2f>& inputPoints)
     root = build_tree(indices, 0, 0, points.size());
 }
 
-KDTree2D::Node* KDTree2D::build_tree(std::vector<size_t>& indices, int depth, int start, int end)
+std::unique_ptr<KDTree2D::Node>
+KDTree2D::build_tree(std::vector<size_t>& indices, int depth, int start, int end)
 {
     if (start >= end)
         return nullptr;
@@ -48,7 +36,7 @@ KDTree2D::Node* KDTree2D::build_tree(std::vector<size_t>& indices, int depth, in
                          }
                      });
 
-    Node* node = new Node(points[indices[mid]], indices[mid]);
+    auto node = std::make_unique<Node>(points[indices[mid]], indices[mid]);
     node->left = build_tree(indices, depth + 1, start, mid);
     node->right = build_tree(indices, depth + 1, mid + 1, end);
     return node;
@@ -57,11 +45,11 @@ KDTree2D::Node* KDTree2D::build_tree(std::vector<size_t>& indices, int depth, in
 std::vector<size_t> KDTree2D::radius_search(const Eigen::Vector2f& target, float radius) const
 {
     std::vector<size_t> result;
-    radius_search_helper(root, target, radius * radius, result, 0);
+    radius_search_helper(root.get(), target, radius * radius, result, 0);
     return result;
 }
 
-void KDTree2D::radius_search_helper(Node* node,
+void KDTree2D::radius_search_helper(const Node* node,
                                     const Eigen::Vector2f& target,
                                     float squared_radius,
                                     std::vector<size_t>& result,
@@ -82,8 +70,8 @@ void KDTree2D::radius_search_helper(Node* node,
     float delta = (axis == 0) ? dx : dy;
 
     // Always traverse the side of the split that contains the target point
-    Node* near_child = (delta > 0) ? node->left : node->right;
-    Node* far_child = (delta > 0) ? node->right : node->left;
+    const Node* near_child = (delta > 0) ? node->left.get() : node->right.get();
+    const Node* far_child = (delta > 0) ? node->right.get() : node->left.get();
 
     radius_search_helper(near_child, target, squared_radius, result, depth + 1);
 

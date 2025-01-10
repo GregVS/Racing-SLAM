@@ -6,15 +6,12 @@ MapPoint::MapPoint(const Eigen::Vector3f& position) : m_position(position) {}
 
 const Eigen::Vector3f& MapPoint::position() const { return m_position; }
 
-void MapPoint::add_observation(const std::shared_ptr<KeyFrame>& key_frame, int index)
+void MapPoint::add_observation(const Frame* key_frame, int index)
 {
     m_observations[key_frame] = index;
 }
 
-const std::unordered_map<std::shared_ptr<KeyFrame>, int>& MapPoint::observations() const
-{
-    return m_observations;
-}
+const std::unordered_map<const Frame*, int>& MapPoint::observations() const { return m_observations; }
 
 Map::Map() {}
 

@@ -25,8 +25,8 @@ class Frame {
     const std::vector<MapPointMatch>& map_matches() const;
 
   private:
-    const size_t m_index;
-    const cv::Mat m_image;
+    size_t m_index;
+    cv::Mat m_image;
 
     ExtractedFeatures m_features;
     KDTree2D m_kd_tree;

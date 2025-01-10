@@ -9,7 +9,7 @@ int main()
     slam.initialize();
 
     // Display the map matches
-    slam::Visualization visualization("Map Matching");
+    slam::Visualization visualization("Racing SLAM");
     visualization.initialize();
     visualization.run_threaded();
 
@@ -25,15 +25,15 @@ int main()
         visualization.set_points(points);
 
         // Draw the keypoints and map matches on the frame
-        auto const& frame = slam.frame();
-        cv::Mat render = frame->image().clone();
+        const auto& frame = slam.frame();
+        cv::Mat render = frame.image().clone();
         std::vector<cv::KeyPoint> keypoints;
-        for (const auto& match : frame->map_matches()) {
-            auto feature = frame->keypoint(match.keypoint_index);
+        for (const auto& match : frame.map_matches()) {
+            auto feature = frame.keypoint(match.keypoint_index);
             keypoints.push_back(feature);
         }
         cv::drawKeypoints(render,
-                          frame->features().keypoints,
+                          frame.features().keypoints,
                           render,
                           cv::Scalar(255, 0, 0),
                           cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);

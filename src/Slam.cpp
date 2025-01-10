@@ -12,59 +12,69 @@ Slam::Slam(const VideoLoader& video_loader, const Camera& camera, const cv::Mat&
 {
 }
 
-std::shared_ptr<Frame> Slam::process_next_frame()
+std::optional<Frame> Slam::process_next_frame()
 {
     auto image = m_video_loader.get_next_frame();
+    if (image.empty()) {
+        return std::nullopt;
+    }
     auto features = features::extract_features(image, m_static_mask);
-    return std::make_shared<Frame>(m_frame_index++, image, features);
+    return std::make_optional<Frame>(m_frame_index++, image, features);
 }
 
 void Slam::initialize()
 {
     // First first frames
-    auto result = init::find_initializing_frames([this]() { return process_next_frame(); },
+    auto maybe_result = init::find_initializing_frames([this]() { return process_next_frame(); },
                                                  m_camera);
-    if (!result.ref_frame || !result.query_frame) {
+    if (!maybe_result) {
         std::cout << "Initialization failed" << std::endl;
         return;
     }
 
-    // Create the first two keyframes
-    auto keyframe1 = std::make_shared<KeyFrame>(result.ref_frame->index(),
-                                                Eigen::Matrix4f::Identity(),
-                                                result.ref_frame->features());
-    auto keyframe2 = std::make_shared<KeyFrame>(result.query_frame->index(),
-                                                result.pose,
-                                                result.query_frame->features());
-    m_key_frames.push_back(keyframe1);
-    m_key_frames.push_back(keyframe2);
+    auto result = std::move(*maybe_result);
+    auto ref_frame = std::make_shared<Frame>(std::move(result.ref_frame));
+    auto query_frame = std::make_shared<Frame>(std::move(result.query_frame));
+
+    m_key_frames.push_back(ref_frame);
+    m_key_frames.push_back(query_frame);
 
     // Triangulate points
-    auto [points1, points2] = triangulation::get_matching_points(keyframe1->features(),
-                                                                 keyframe2->features(),
+    auto [points1, points2] = triangulation::get_matching_points(ref_frame->features(),
+                                                                 query_frame->features(),
                                                                  result.inlier_matches);
     auto points = triangulation::triangulate_points(points1,
                                                     points2,
-                                                    keyframe1->pose(),
-                                                    keyframe2->pose(),
+                                                    Eigen::Matrix4f::Identity(),
+                                                    result.pose,
                                                     m_camera);
 
     // Add points to map
     for (int i = 0; i < points.size(); i++) {
         auto point = std::make_unique<MapPoint>(points[i].position);
-        point->add_observation(keyframe1, result.inlier_matches[points[i].match_index].train_index);
-        point->add_observation(keyframe2, result.inlier_matches[points[i].match_index].query_index);
+        point->add_observation(ref_frame.get(), result.inlier_matches[points[i].match_index].train_index);
+        point->add_observation(query_frame.get(), result.inlier_matches[points[i].match_index].query_index);
         m_map.add_point(std::move(point));
+
+        // This is mostly for visualization
+        ref_frame->add_map_match(MapPointMatch{*point, result.inlier_matches[points[i].match_index].train_index});
+        query_frame->add_map_match(MapPointMatch{*point, result.inlier_matches[points[i].match_index].query_index});
     }
+    std::cout << "Number of triangulated points: " << points.size() << std::endl;
 
     m_poses.push_back(Eigen::Matrix4f::Identity());
     m_poses.push_back(result.pose);
-    m_frame = result.query_frame;
+    m_frame = query_frame;
 }
 
 void Slam::step()
 {
-    auto frame = process_next_frame();
+    auto maybe_frame = process_next_frame();
+    if (!maybe_frame) {
+        std::cout << "No frame to process" << std::endl;
+        return;
+    }
+    auto frame = std::make_shared<Frame>(std::move(*maybe_frame));
 
     // Estimate pose based on velocity
     auto velocity = m_poses.back().block<3, 1>(0, 3) - m_poses[m_poses.size() - 2].block<3, 1>(0, 3);
@@ -76,6 +86,7 @@ void Slam::step()
     for (const auto& match : matches) {
         frame->add_map_match(match);
     }
+    std::cout << "Number of map matches: " << frame->map_matches().size() << std::endl;
 
     // Optimize pose
     auto optimized_pose = optimization::optimize_pose(pose_estimate, m_map, *frame, m_camera);
@@ -84,11 +95,9 @@ void Slam::step()
     m_frame = frame;
 }
 
-const std::vector<std::shared_ptr<KeyFrame>>& Slam::key_frames() const { return m_key_frames; }
-
 const Map& Slam::map() const { return m_map; }
 
-const std::shared_ptr<const Frame>& Slam::frame() const { return m_frame; }
+const Frame& Slam::frame() const { return *m_frame; }
 
 const std::vector<Eigen::Matrix4f>& Slam::poses() const { return m_poses; }
 

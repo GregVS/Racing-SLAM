@@ -1,9 +1,10 @@
 #pragma once
 
 #include "Camera.h"
-#include "KeyFrame.h"
 #include "Map.h"
 #include "VideoLoader.h"
+
+#include <optional>
 
 namespace slam {
 
@@ -14,9 +15,8 @@ class Slam {
     void initialize();
     void step();
 
-    const std::vector<std::shared_ptr<KeyFrame>>& key_frames() const;
     const Map& map() const;
-    const std::shared_ptr<const Frame>& frame() const;
+    const Frame& frame() const;
     const std::vector<Eigen::Matrix4f>& poses() const;
 
   private:
@@ -27,13 +27,13 @@ class Slam {
     // State
     VideoLoader m_video_loader;
     size_t m_frame_index = 0;
-    std::vector<std::shared_ptr<KeyFrame>> m_key_frames;
     Map m_map;
-    std::shared_ptr<const Frame> m_frame;
+    std::vector<std::shared_ptr<Frame>> m_key_frames;
+    std::shared_ptr<Frame> m_frame;
     std::vector<Eigen::Matrix4f> m_poses;
 
     // Private methods
-    std::shared_ptr<Frame> process_next_frame();
+    std::optional<Frame> process_next_frame();
 };
 
 } // namespace slam

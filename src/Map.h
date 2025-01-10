@@ -7,7 +7,7 @@
 
 namespace slam {
 
-class KeyFrame;
+class Frame;
 
 class MapPoint {
   public:
@@ -15,13 +15,13 @@ class MapPoint {
 
     const Eigen::Vector3f& position() const;
 
-    void add_observation(const std::shared_ptr<KeyFrame>& key_frame, int index);
+    void add_observation(const Frame* key_frame, int index);
 
-    const std::unordered_map<std::shared_ptr<KeyFrame>, int>& observations() const;
+    const std::unordered_map<const Frame*, int>& observations() const;
 
   private:
     Eigen::Vector3f m_position;
-    std::unordered_map<std::shared_ptr<KeyFrame>, int> m_observations;
+    std::unordered_map<const Frame*, int> m_observations;
 };
 
 class Map {
@@ -31,8 +31,6 @@ class Map {
     void add_point(const Eigen::Vector3f& position);
 
     void add_point(std::unique_ptr<MapPoint>&& point);
-
-    void add_observation(const MapPoint& point, const std::shared_ptr<KeyFrame>& key_frame);
 
     // Custom iterator for map points with type MapPoint&
     class iterator {
