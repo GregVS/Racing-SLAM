@@ -1,4 +1,5 @@
 #pragma once
+
 #include <pangolin/pangolin.h>
 #include <Eigen/Core>
 #include <vector>

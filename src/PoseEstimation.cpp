@@ -1,11 +1,11 @@
-#include "PoseEstimator.h"
+#include "PoseEstimation.h"
 
 #include <Eigen/Dense>
 #include <opencv2/core/eigen.hpp>
 
-#include "FeatureExtractor.h"
+#include "Features.h"
 
-namespace slam {
+namespace slam::pose {
 
 static cv::Mat cv_Rt(const cv::Mat& R, const cv::Mat& t)
 {
@@ -71,10 +71,10 @@ recover_pose_from_essential(const cv::Mat& E,
     return std::make_pair(pose, best_inliers);
 }
 
-PoseEstimate PoseEstimator::estimate_pose(const std::vector<FeatureMatch>& matches,
-                                          const ExtractedFeatures& prev_features,
-                                          const ExtractedFeatures& features,
-                                          const Camera& camera) const
+PoseEstimate estimate_pose(const std::vector<FeatureMatch>& matches,
+                           const ExtractedFeatures& prev_features,
+                           const ExtractedFeatures& features,
+                           const Camera& camera)
 {
     std::vector<cv::Point2f> matched_points_from, matched_points_to;
     for (const auto& match : matches) {
@@ -85,14 +85,15 @@ PoseEstimate PoseEstimator::estimate_pose(const std::vector<FeatureMatch>& match
     std::vector<uchar> essential_inliers;
     cv::Mat E = cv::findEssentialMat(matched_points_from,
                                      matched_points_to,
-                                     intrinsic_mat_cv(camera),
+                                     cv_utils::intrinsic_mat_cv(camera),
                                      cv::RANSAC,
                                      0.999,
                                      1.0,
                                      essential_inliers);
 
+    auto intrinsic_cv = cv_utils::intrinsic_mat_cv(camera);
     auto [pose, triangulated_inliers] = recover_pose_from_essential(E,
-                                                                    intrinsic_mat_cv(camera),
+                                                                    intrinsic_cv,
                                                                     matched_points_from,
                                                                     matched_points_to,
                                                                     essential_inliers);
@@ -105,4 +106,4 @@ PoseEstimate PoseEstimator::estimate_pose(const std::vector<FeatureMatch>& match
     return PoseEstimate{pose, inlier_matches};
 }
 
-} // namespace slam
+} // namespace slam::pose

@@ -1,15 +1,13 @@
 #pragma once
 
 #include "Camera.h"
-#include "FeatureExtractor.h"
+#include "Features.h"
 #include "Frame.h"
-#include "PoseEstimator.h"
+#include "PoseEstimation.h"
 #include "VideoLoader.h"
 
 struct TestData {
     slam::VideoLoader video_loader;
-    slam::FeatureExtractor feature_extractor;
-    slam::PoseEstimator pose_estimator;
     slam::Camera camera;
     cv::Mat static_mask;
 };
@@ -28,8 +26,6 @@ static TestData load_test_data()
 {
     TestData test_data = {
         .video_loader = slam::VideoLoader("videos/lime-rock-race.mp4"),
-        .feature_extractor = slam::FeatureExtractor(),
-        .pose_estimator = slam::PoseEstimator(),
         .camera = slam::Camera(914,
                                test_data.video_loader.get_width(),
                                test_data.video_loader.get_height()),

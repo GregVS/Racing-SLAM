@@ -2,8 +2,8 @@
 #include <opencv2/opencv.hpp>
 #include <unordered_set>
 
-#include "FeatureExtractor.h"
-#include "PoseEstimator.h"
+#include "Features.h"
+#include "PoseEstimation.h"
 #include "TestHelpers.h"
 #include "VideoLoader.h"
 
@@ -18,16 +18,15 @@ int main(int argc, char* argv[])
         cv::Mat frame = frames[i];
 
         // Extract features
-        auto prev_features =
-            test_data.feature_extractor.extract_features(prev_frame, test_data.static_mask);
-        auto features = test_data.feature_extractor.extract_features(frame, test_data.static_mask);
+        auto prev_features = slam::features::extract_features(prev_frame, test_data.static_mask);
+        auto features = slam::features::extract_features(frame, test_data.static_mask);
 
         // Match features
-        auto matches = test_data.feature_extractor.match_features(prev_features, features);
-        auto pose_estimate = test_data.pose_estimator.estimate_pose(matches,
-                                                                    prev_features,
-                                                                    features,
-                                                                    test_data.camera);
+        auto matches = slam::features::match_features(prev_features, features);
+        auto pose_estimate = slam::pose::estimate_pose(matches,
+                                                       prev_features,
+                                                       features,
+                                                       test_data.camera);
 
         // Group keypoints into inliers, outliers, and unmatched
         std::vector<cv::KeyPoint> inliner_keypoints;

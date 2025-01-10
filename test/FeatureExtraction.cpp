@@ -1,7 +1,7 @@
 #include <iostream>
 #include <opencv2/opencv.hpp>
 
-#include "FeatureExtractor.h"
+#include "Features.h"
 #include "TestHelpers.h"
 #include "VideoLoader.h"
 
@@ -17,7 +17,7 @@ int main(int argc, char* argv[])
 
         // Feature extraction
         auto features = time_it<slam::ExtractedFeatures>("Feature extraction", [&]() {
-            return test_data.feature_extractor.extract_features(image, test_data.static_mask);
+            return slam::features::extract_features(image, test_data.static_mask);
         });
 
         std::cout << "Features: " << features.keypoints.size() << std::endl;
