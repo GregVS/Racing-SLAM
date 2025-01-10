@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Eigen/Dense>
 #include <vector>
 
@@ -17,9 +19,9 @@ get_matching_points(const ExtractedFeatures& features1,
                     const std::vector<FeatureMatch>& matches);
 
 std::vector<TriangulatedPoint> triangulate_points(const std::vector<Eigen::Vector2f>& points1,
-                                                const std::vector<Eigen::Vector2f>& points2,
-                                                const Eigen::Matrix4f& pose1,
-                                                const Eigen::Matrix4f& pose2,
-                                                const Camera& camera);
+                                                  const std::vector<Eigen::Vector2f>& points2,
+                                                  const Eigen::Matrix4f& pose1,
+                                                  const Eigen::Matrix4f& pose2,
+                                                  const Camera& camera);
 
-} // namespace slam::geometry
+} // namespace slam::triangulation

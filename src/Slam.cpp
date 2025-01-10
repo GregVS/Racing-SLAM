@@ -3,6 +3,7 @@
 #include "Features.h"
 #include "Init.h"
 #include "Triangulation.h"
+#include "Optimization.h"
 
 namespace slam {
 
@@ -56,26 +57,39 @@ void Slam::initialize()
         m_map.add_point(std::move(point));
     }
 
-    m_pose = result.pose;
+    m_poses.push_back(Eigen::Matrix4f::Identity());
+    m_poses.push_back(result.pose);
+    m_frame = result.query_frame;
 }
 
 void Slam::step()
 {
     auto frame = process_next_frame();
 
+    // Estimate pose based on velocity
+    auto velocity = m_poses.back().block<3, 1>(0, 3) - m_poses[m_poses.size() - 2].block<3, 1>(0, 3);
+    auto pose_estimate = m_poses.back();
+    pose_estimate.block<3, 1>(0, 3) += velocity;
+
     // Match features to map
-    auto matches = features::match_features(*frame, m_camera, m_map, m_pose);
+    auto matches = features::match_features(*frame, m_camera, m_map, pose_estimate);
     for (const auto& match : matches) {
         frame->add_map_match(match);
     }
 
-    m_frame = std::move(frame);
+    // Optimize pose
+    auto optimized_pose = optimization::optimize_pose(pose_estimate, m_map, *frame, m_camera);
+    m_poses.push_back(optimized_pose);
+
+    m_frame = frame;
 }
 
 const std::vector<std::shared_ptr<KeyFrame>>& Slam::key_frames() const { return m_key_frames; }
 
 const Map& Slam::map() const { return m_map; }
 
-const std::shared_ptr<Frame>& Slam::frame() const { return m_frame; }
+const std::shared_ptr<const Frame>& Slam::frame() const { return m_frame; }
+
+const std::vector<Eigen::Matrix4f>& Slam::poses() const { return m_poses; }
 
 } // namespace slam

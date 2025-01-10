@@ -88,4 +88,4 @@ std::vector<TriangulatedPoint> triangulate_points(const std::vector<Eigen::Vecto
     return triangulated;
 }
 
-} // namespace slam
+} // namespace slam::triangulation

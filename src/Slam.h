@@ -16,7 +16,8 @@ class Slam {
 
     const std::vector<std::shared_ptr<KeyFrame>>& key_frames() const;
     const Map& map() const;
-    const std::shared_ptr<Frame>& frame() const;
+    const std::shared_ptr<const Frame>& frame() const;
+    const std::vector<Eigen::Matrix4f>& poses() const;
 
   private:
     // Configuration
@@ -28,8 +29,8 @@ class Slam {
     size_t m_frame_index = 0;
     std::vector<std::shared_ptr<KeyFrame>> m_key_frames;
     Map m_map;
-    std::shared_ptr<Frame> m_frame;
-    Eigen::Matrix4f m_pose;
+    std::shared_ptr<const Frame> m_frame;
+    std::vector<Eigen::Matrix4f> m_poses;
 
     // Private methods
     std::shared_ptr<Frame> process_next_frame();
