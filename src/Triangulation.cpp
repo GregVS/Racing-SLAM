@@ -23,17 +23,11 @@ get_matching_points(const ExtractedFeatures& features1,
     return std::make_pair(points1, points2);
 }
 
-static float reprojection_error(const cv::Point2f& point, const cv::Mat& projection)
-{
-    return (point.x - projection.at<float>(0, 0)) * (point.x - projection.at<float>(0, 0)) +
-           (point.y - projection.at<float>(1, 0)) * (point.y - projection.at<float>(1, 0));
-}
-
 std::vector<TriangulatedPoint> triangulate_points(const std::vector<Eigen::Vector2f>& points1,
-                                                const std::vector<Eigen::Vector2f>& points2,
-                                                const Eigen::Matrix4f& pose1,
-                                                const Eigen::Matrix4f& pose2,
-                                                const Camera& camera)
+                                                  const std::vector<Eigen::Vector2f>& points2,
+                                                  const Eigen::Matrix4f& pose1,
+                                                  const Eigen::Matrix4f& pose2,
+                                                  const Camera& camera)
 {
     // Convert the projection matrices to OpenCV format
     cv::Mat projection1_cv = cv_utils::projection_mat_cv(camera, pose1);
@@ -54,35 +48,39 @@ std::vector<TriangulatedPoint> triangulate_points(const std::vector<Eigen::Vecto
     // Convert the points to 3D and filter
     std::vector<TriangulatedPoint> triangulated;
     for (int i = 0; i < points4D.cols; i++) {
-        cv::Mat point = points4D.col(i);
-        point /= point.at<float>(3, 0);
+        auto point = Eigen::Vector3f(
+            points4D.col(i).at<float>(0, 0) / points4D.col(i).at<float>(3, 0),
+            points4D.col(i).at<float>(1, 0) / points4D.col(i).at<float>(3, 0),
+            points4D.col(i).at<float>(2, 0) / points4D.col(i).at<float>(3, 0));
 
-        cv::Mat cam1_point = cv_utils::extrinsic_mat_cv(pose1) * point;
-        cv::Mat cam2_point = cv_utils::extrinsic_mat_cv(pose2) * point;
+        Eigen::Vector3f cam1_point = pose1.block<3, 4>(0, 0) * point.homogeneous();
+        Eigen::Vector3f cam2_point = pose2.block<3, 4>(0, 0) * point.homogeneous();
 
         // Filter points that are behind either camera
-        if (cam1_point.at<float>(2, 0) < 0 || cam2_point.at<float>(2, 0) < 0) {
+        if (cam1_point.z() < 0 || cam2_point.z() < 0) {
+            continue;
+        }
+
+        // Filter points with low parallax
+        auto point_to_cam1 = pose1.inverse().block<3, 1>(0, 3) - point;
+        auto point_to_cam2 = pose2.inverse().block<3, 1>(0, 3) - point;
+        auto similarity = point_to_cam1.normalized().dot(point_to_cam2.normalized());
+        if (similarity > 0.99998) {
             continue;
         }
 
         // Convert to image coordinates
-        cv::Mat image1_point = cv_utils::intrinsic_mat_cv(camera) * cam1_point;
-        cv::Mat image2_point = cv_utils::intrinsic_mat_cv(camera) * cam2_point;
-
-        image1_point /= image1_point.at<float>(2, 0);
-        image2_point /= image2_point.at<float>(2, 0);
+        Eigen::Vector2f image1_point = (camera.get_intrinsic_matrix() * cam1_point).hnormalized();
+        Eigen::Vector2f image2_point = (camera.get_intrinsic_matrix() * cam2_point).hnormalized();
 
         // Filter points with poor reprojection error
-        auto reprojection_error1 = reprojection_error(points1_cv[i], image1_point);
-        auto reprojection_error2 = reprojection_error(points2_cv[i], image2_point);
+        auto reprojection_error1 = (image1_point - points1[i]).norm();
+        auto reprojection_error2 = (image2_point - points2[i]).norm();
         if (reprojection_error1 > 2 || reprojection_error2 > 2) {
             continue;
         }
 
-        triangulated.push_back(TriangulatedPoint{
-            .position = Eigen::Vector3f(point.at<float>(0, 0), point.at<float>(1, 0), point.at<float>(2, 0)),
-            .match_index = i
-        });
+        triangulated.push_back(TriangulatedPoint{.position = point, .match_index = i});
     }
 
     return triangulated;
