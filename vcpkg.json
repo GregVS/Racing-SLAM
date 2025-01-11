@@ -2,6 +2,7 @@
   "dependencies": [
     "glm",
     "pangolin",
+    "eigen3",
     {
       "name": "ceres",
       "features": [
