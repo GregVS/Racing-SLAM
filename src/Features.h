@@ -39,8 +39,8 @@ struct MapPointMatch {
 
 namespace features {
 
-static constexpr int MAX_ORB_DISTANCE = 32;
-static constexpr int MAX_ORB_DISTANCE_TO_MAP = 32;
+static constexpr int MAX_ORB_DISTANCE = 64;
+static constexpr int MAX_ORB_DISTANCE_TO_MAP = 64;
 
 ExtractedFeatures extract_features(const cv::Mat& image,
                                    const cv::InputArray& mask = cv::noArray());
@@ -50,8 +50,7 @@ std::vector<FeatureMatch> match_features(const ExtractedFeatures& prev_features,
 
 std::vector<MapPointMatch> match_features(const Frame& frame,
                                           const Camera& camera,
-                                          const Map& map,
-                                          const Eigen::Matrix4f& pose);
+                                          const Map& map);
 }; // namespace features
 
 }; // namespace slam
