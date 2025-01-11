@@ -16,22 +16,43 @@ class Frame {
     const cv::Mat& image() const;
 
     void add_map_match(const MapPointMatch& match);
+    void set_pose(const Eigen::Matrix4f& pose);
 
     const ExtractedFeatures& features() const;
     const cv::Mat descriptor(size_t index) const;
     const cv::KeyPoint& keypoint(size_t index) const;
+    const MapPoint& map_match(size_t index) const;
+    const Eigen::Matrix4f& pose() const;
 
     std::vector<size_t> features_in_region(const Eigen::Vector2f& uv, float radius) const;
-    const std::vector<MapPointMatch>& map_matches() const;
+    bool is_matched(size_t keypoint_index) const;
+
+    class MapPointIterator {
+      public:
+        MapPointIterator(const Frame& frame, size_t index);
+        MapPointMatch operator*() const;
+        MapPointIterator& operator++();
+        bool operator!=(const MapPointIterator& other) const;
+
+        MapPointIterator begin() const;
+        MapPointIterator end() const;
+
+      private:
+        const Frame& m_frame;
+        size_t m_index;
+    };
+
+    MapPointIterator map_matches() const;
 
   private:
     size_t m_index;
     cv::Mat m_image;
+    Eigen::Matrix4f m_pose;
 
     ExtractedFeatures m_features;
     KDTree2D m_kd_tree;
 
-    std::vector<MapPointMatch> m_map_matches;
+    std::vector<const MapPoint*> m_map_matches;
 };
 
 } // namespace slam
