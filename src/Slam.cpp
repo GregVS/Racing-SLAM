@@ -72,24 +72,27 @@ void Slam::step()
         std::cout << "No frame to process" << std::endl;
         return;
     }
+
+    const auto& last_frame = m_key_frames.back();
     auto frame = std::make_shared<Frame>(std::move(*maybe_frame));
 
-    // Estimate pose based on velocity
-    auto velocity = m_poses.back().block<3, 1>(0, 3) - m_poses[m_poses.size() - 2].block<3, 1>(0, 3);
-    auto pose_estimate = m_poses.back();
-    pose_estimate.block<3, 1>(0, 3) += velocity;
+    auto pose_estimate = pose::estimate_pose(
+        last_frame->features(),
+        frame->features(),
+        features::match_features(last_frame->features(), frame->features()),
+        m_camera);
+    frame->set_pose(pose_estimate.pose * last_frame->pose());
 
-    // Match features to map
-    auto matches = features::match_features(*frame, m_camera, m_map, pose_estimate);
+    // Match with map
+    auto matches = features::match_features(*frame, m_camera, m_map);
     for (const auto& match : matches) {
         frame->add_map_match(match);
+        const_cast<MapPoint&>(match.point).add_observation(frame.get(), match.keypoint_index);
     }
-    std::cout << "Number of map matches: " << frame->map_matches().size() << std::endl;
+    std::cout << "Number of map matches: " << matches.size() << std::endl;
 
-    // Optimize pose
-    auto optimized_pose = optimization::optimize_pose(pose_estimate, m_map, *frame, m_camera);
-    m_poses.push_back(optimized_pose);
-
+    // Add frame to key frames
+    m_key_frames.push_back(frame);
     m_frame = frame;
 }
 

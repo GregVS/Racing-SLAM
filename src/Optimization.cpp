@@ -80,62 +80,95 @@ static Eigen::Vector3f matrix_to_rodrigues(const Eigen::Matrix3f& R)
 
 namespace slam::optimization {
 
-Eigen::Matrix4f
-optimize_pose(const Eigen::Matrix4f& pose, const Map& map, const Frame& frame, const Camera& camera)
+void optimize(const OptimizationConfig& config, const Camera& camera, Map& map)
 {
     auto problem = ceres::Problem();
 
     // Add pose parameters
-    std::array<double, 6> pose_params;
-    {
-        auto rvec = matrix_to_rodrigues(pose.block<3, 3>(0, 0));
-        auto tvec = pose.block<3, 1>(0, 3);
-        pose_params[0] = rvec[0]; // Rotation
-        pose_params[1] = rvec[1];
-        pose_params[2] = rvec[2];
-        pose_params[3] = tvec[0]; // Translation
-        pose_params[4] = tvec[1];
-        pose_params[5] = tvec[2];
+    std::unordered_map<const Frame*, std::array<double, 6>> frame_params;
+    for (const auto& [_, frame] : config.frames) {
+        frame_params.emplace(frame, std::array<double, 6>{0, 0, 0, 0, 0, 0});
+        auto rvec = matrix_to_rodrigues(frame->pose().block<3, 3>(0, 0));
+        auto tvec = frame->pose().block<3, 1>(0, 3);
+        frame_params[frame][0] = rvec[0]; // Rotation
+        frame_params[frame][1] = rvec[1];
+        frame_params[frame][2] = rvec[2];
+        frame_params[frame][3] = tvec[0]; // Translation
+        frame_params[frame][4] = tvec[1];
+        frame_params[frame][5] = tvec[2];
     }
 
     // Add map point parameters
-    std::vector<std::array<double, 3>> map_point_params;
-    for (const auto& match : frame.map_matches()) {
-        map_point_params.push_back(
-            {match.point.position().x(), match.point.position().y(), match.point.position().z()});
+    std::unordered_map<const MapPoint*, std::array<double, 3>> map_point_params;
+    for (const auto& point : map) {
+        map_point_params.emplace(&point,
+                                 std::array<double, 3>{point.position().x(),
+                                                       point.position().y(),
+                                                       point.position().z()});
     }
 
     // Setup problem
-    for (int i = 0; i < map_point_params.size(); i++) {
-        auto match = frame.map_matches()[i];
-        auto cost_function = ReprojectionError::Create(frame.keypoint(match.keypoint_index).pt.x,
-                                                       frame.keypoint(match.keypoint_index).pt.y,
-                                                       camera.get_intrinsic_matrix()(0, 0),
-                                                       camera.get_intrinsic_matrix()(0, 2),
-                                                       camera.get_intrinsic_matrix()(1, 2));
-        problem.AddResidualBlock(cost_function,
-                                 new ceres::HuberLoss(sqrt(5.991)),
-                                 pose_params.data(),
-                                 map_point_params[i].data());
+    for (const auto& [optimize_frame, frame] : config.frames) {
+        for (const auto& match : frame->map_matches()) {
+            auto cost_function = ReprojectionError::Create(
+                frame->keypoint(match.keypoint_index).pt.x,
+                frame->keypoint(match.keypoint_index).pt.y,
+                camera.get_intrinsic_matrix()(0, 0),
+                camera.get_intrinsic_matrix()(0, 2),
+                camera.get_intrinsic_matrix()(1, 2));
+            problem.AddResidualBlock(cost_function,
+                                     new ceres::HuberLoss(sqrt(5.991)),
+                                     frame_params[frame].data(),
+                                     map_point_params[&match.point].data());
+
+            if (!config.optimize_points) {
+                problem.SetParameterBlockConstant(map_point_params[&match.point].data());
+            }
+
+            if (!optimize_frame) {
+                problem.SetParameterBlockConstant(frame_params[frame].data());
+            }
+        }
     }
 
     // Solve problem
     ceres::Solver::Options options;
-    options.linear_solver_type = ceres::DENSE_SCHUR;
+    options.linear_solver_type = ceres::SPARSE_SCHUR;
     options.minimizer_progress_to_stdout = true;
+    options.max_num_iterations = 10;
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
+    std::cout << summary.FullReport() << std::endl;
 
     // Extract optimized pose
-    Eigen::Matrix4f optimized_pose = Eigen::Matrix4f::Identity();
-    {
-        auto rvec = Eigen::Vector3f(pose_params[0], pose_params[1], pose_params[2]);
-        auto tvec = Eigen::Vector3f(pose_params[3], pose_params[4], pose_params[5]);
-        optimized_pose.block<3, 3>(0, 0) = rodrigues_to_matrix(rvec);
-        optimized_pose.block<3, 1>(0, 3) = tvec;
+    for (const auto& [optimize, frame] : config.frames) {
+        if (!optimize) {
+            continue;
+        }
+
+        auto rvec = Eigen::Vector3f(frame_params[frame][0],
+                                    frame_params[frame][1],
+                                    frame_params[frame][2]);
+        auto tvec = Eigen::Vector3f(frame_params[frame][3],
+                                    frame_params[frame][4],
+                                    frame_params[frame][5]);
+        Eigen::Matrix4f pose = Eigen::Matrix4f::Identity();
+        pose.block<3, 3>(0, 0) = rodrigues_to_matrix(rvec);
+        pose.block<3, 1>(0, 3) = tvec;
+        frame->set_pose(pose);
+
+        std::cout << "Frame " << frame->index() << " pose: " << pose.block<3, 1>(0, 3).transpose()
+                  << std::endl;
     }
 
-    return optimized_pose;
+    // Extract optimized map points
+    if (config.optimize_points) {
+        for (auto& point : map) {
+            point.set_position(Eigen::Vector3f(map_point_params[&point][0],
+                                               map_point_params[&point][1],
+                                               map_point_params[&point][2]));
+        }
+    }
 }
 
 } // namespace slam::optimization
