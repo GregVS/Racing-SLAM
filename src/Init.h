@@ -9,21 +9,16 @@
 
 namespace slam::init {
 
-struct InitializerResult {
-    /* Note that the frames may be null if the initialization failed */
+struct Initialization {
     Frame ref_frame;
     Frame query_frame;
-    std::vector<FeatureMatch> inlier_matches;
-    Eigen::Matrix4f pose;
+    std::vector<FeatureMatch> matches;
 };
 
-static constexpr int MIN_KEYPOINTS = 100;
-static constexpr int MIN_MATCHES = 100;
 static constexpr int MAX_REF_CHANCES = 5;
-static constexpr float GOOD_MATCH_DISTANCE = 15.0;
-static constexpr int MIN_GOOD_MATCHES = 50;
+static constexpr int MIN_TRIANGULATED_POINTS = 50;
 
-std::optional<InitializerResult> find_initializing_frames(std::function<std::optional<Frame>()> next_frame,
+std::optional<Initialization> find_initializing_frames(std::function<std::optional<Frame>()> next_frame,
                                                          const Camera& camera);
 
 } // namespace slam::init

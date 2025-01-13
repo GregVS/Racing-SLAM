@@ -2,8 +2,9 @@
 
 #include "Features.h"
 #include "Init.h"
-#include "Triangulation.h"
 #include "Optimization.h"
+#include "PoseEstimation.h"
+#include "Triangulation.h"
 
 namespace slam {
 
@@ -26,7 +27,7 @@ void Slam::initialize()
 {
     // First first frames
     auto maybe_result = init::find_initializing_frames([this]() { return process_next_frame(); },
-                                                 m_camera);
+                                                       m_camera);
     if (!maybe_result) {
         std::cout << "Initialization failed" << std::endl;
         return;
@@ -35,35 +36,32 @@ void Slam::initialize()
     auto result = std::move(*maybe_result);
     auto ref_frame = std::make_shared<Frame>(std::move(result.ref_frame));
     auto query_frame = std::make_shared<Frame>(std::move(result.query_frame));
-
-    m_key_frames.push_back(ref_frame);
-    m_key_frames.push_back(query_frame);
+    std::cout << "Initializing frames: " << ref_frame->index() << " and " << query_frame->index()
+              << std::endl;
 
     // Triangulate points
-    auto [points1, points2] = triangulation::get_matching_points(ref_frame->features(),
-                                                                 query_frame->features(),
-                                                                 result.inlier_matches);
-    auto points = triangulation::triangulate_points(points1,
-                                                    points2,
-                                                    Eigen::Matrix4f::Identity(),
-                                                    result.pose,
+    auto points = triangulation::triangulate_points(*ref_frame,
+                                                    *query_frame,
+                                                    result.matches,
                                                     m_camera);
 
     // Add points to map
     for (int i = 0; i < points.size(); i++) {
-        auto point = std::make_unique<MapPoint>(points[i].position);
-        point->add_observation(ref_frame.get(), result.inlier_matches[points[i].match_index].train_index);
-        point->add_observation(query_frame.get(), result.inlier_matches[points[i].match_index].query_index);
-        m_map.add_point(std::move(point));
+        auto train_index = result.matches[points[i].match_index].train_index;
+        auto query_index = result.matches[points[i].match_index].query_index;
 
-        // This is mostly for visualization
-        ref_frame->add_map_match(MapPointMatch{*point, result.inlier_matches[points[i].match_index].train_index});
-        query_frame->add_map_match(MapPointMatch{*point, result.inlier_matches[points[i].match_index].query_index});
+        auto point = std::make_unique<MapPoint>(points[i].position);
+        point->add_observation(ref_frame.get(), train_index);
+        point->add_observation(query_frame.get(), query_index);
+        ref_frame->add_map_match(MapPointMatch{*point, train_index});
+        query_frame->add_map_match(MapPointMatch{*point, query_index});
+        m_map.add_point(std::move(point));
     }
     std::cout << "Number of triangulated points: " << points.size() << std::endl;
 
-    m_poses.push_back(Eigen::Matrix4f::Identity());
-    m_poses.push_back(result.pose);
+    // Add frames to key frames
+    m_key_frames.push_back(ref_frame);
+    m_key_frames.push_back(query_frame);
     m_frame = query_frame;
 }
 
@@ -95,10 +93,40 @@ void Slam::step()
     m_frame = frame;
 }
 
-const Map& Slam::map() const { return m_map; }
+float Slam::reprojection_error() const
+{
+    float error = 0.0;
+    int num_projected = 0;
+    for (const auto& frame : m_key_frames) {
+        for (const auto& match : frame->map_matches()) {
+            auto point = match.point;
+            auto projected = m_camera.project(frame->pose(), point.position());
+            auto image_point = Eigen::Vector2f(frame->keypoint(match.keypoint_index).pt.x,
+                                               frame->keypoint(match.keypoint_index).pt.y);
+            error += (projected - image_point).norm();
+            num_projected++;
+        }
+    }
+    return error / num_projected;
+}
 
-const Frame& Slam::frame() const { return *m_frame; }
+const Map& Slam::map() const
+{
+    return m_map;
+}
 
-const std::vector<Eigen::Matrix4f>& Slam::poses() const { return m_poses; }
+const Frame& Slam::frame() const
+{
+    return *m_frame;
+}
+
+std::vector<Eigen::Matrix4f> Slam::poses() const
+{
+    std::vector<Eigen::Matrix4f> poses;
+    for (const auto& frame : m_key_frames) {
+        poses.push_back(frame->pose());
+    }
+    return poses;
+}
 
 } // namespace slam

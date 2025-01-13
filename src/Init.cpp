@@ -1,10 +1,11 @@
 #include "Init.h"
 
 #include "PoseEstimation.h"
+#include "Triangulation.h"
 
 namespace slam::init {
 
-std::optional<InitializerResult>
+std::optional<Initialization>
 find_initializing_frames(std::function<std::optional<Frame>()> next_frame, const Camera& camera)
 {
     // Get the first frame
@@ -24,7 +25,7 @@ find_initializing_frames(std::function<std::optional<Frame>()> next_frame, const
         Frame query_frame = std::move(*query_frame_opt);
         ref_chances++;
 
-        // Check if we've tried too many times
+        // After too many attempts, reset ref frame
         if (ref_chances > MAX_REF_CHANCES) {
             std::cout << "Max ref chances reached" << std::endl;
             ref_frame = std::move(query_frame);
@@ -32,53 +33,27 @@ find_initializing_frames(std::function<std::optional<Frame>()> next_frame, const
             continue;
         }
 
-        // Check if the reference frame has enough keypoints
-        if (ref_frame.features().keypoints.size() < MIN_KEYPOINTS) {
-            std::cout << "Ref frame has too few keypoints" << std::endl;
-            ref_frame = std::move(query_frame);
-            ref_chances = 0;
-            continue;
-        }
-
-        // Check if the query frame has enough keypoints
-        if (query_frame.features().keypoints.size() < MIN_KEYPOINTS) {
-            std::cout << "Frame has too few keypoints: " << query_frame.features().keypoints.size()
-                      << std::endl;
-            continue;
-        }
-
-        // Match features and check if there are enough matches
+        // Estimate pose
         auto matches = features::match_features(ref_frame.features(), query_frame.features());
-        if (matches.size() < MIN_MATCHES) {
-            std::cout << "Frame has too few matches: " << matches.size() << std::endl;
-            continue;
-        }
-
-        // Estimate pose and check if there are enough good matches
-        auto pose_estimate = pose::estimate_pose(matches,
-                                                 ref_frame.features(),
+        auto pose_estimate = pose::estimate_pose(ref_frame.features(),
                                                  query_frame.features(),
+                                                 matches,
                                                  camera);
-        int good_matches = 0;
-        for (int i = 0; i < matches.size(); i++) {
-            auto ref_keypoint = ref_frame.keypoint(matches[i].train_index);
-            auto curr_keypoint = query_frame.keypoint(matches[i].query_index);
-            auto distance = cv::norm(ref_keypoint.pt - curr_keypoint.pt);
-            if (distance > GOOD_MATCH_DISTANCE) {
-                good_matches++;
-            }
-        }
+        ref_frame.set_pose(Eigen::Matrix4f::Identity());
+        query_frame.set_pose(pose_estimate.pose);
 
-        if (good_matches < MIN_GOOD_MATCHES) {
-            std::cout << "Frame has too few good matches: " << good_matches << " / "
-                      << matches.size() << std::endl;
+        // Triangulate points
+        auto triangulated_points = triangulation::triangulate_points(ref_frame,
+                                                                     query_frame,
+                                                                     matches,
+                                                                     camera);
+        if (triangulated_points.size() < MIN_TRIANGULATED_POINTS) {
+            std::cout << "Frame has too few triangulated points: " << triangulated_points.size()
+                      << " / " << matches.size() << std::endl;
             continue;
         }
 
-        return InitializerResult{std::move(ref_frame),
-                                 std::move(query_frame),
-                                 pose_estimate.inlier_matches,
-                                 pose_estimate.pose};
+        return Initialization{std::move(ref_frame), std::move(query_frame), matches};
     }
 
     return std::nullopt;

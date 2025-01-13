@@ -22,21 +22,34 @@ template <typename T> T time_it(const std::string& name, std::function<T()> func
     return result;
 }
 
-static TestData load_test_data()
+constexpr std::string_view LIME_ROCK_RACE_VIDEO = "videos/lime-rock-race.mp4";
+constexpr std::string_view HIGHWAY_VIDEO = "videos/highway.mp4";
+
+static TestData load_test_data(std::string_view video = LIME_ROCK_RACE_VIDEO)
 {
+    int focal_length;
+    if (video == HIGHWAY_VIDEO) {
+        focal_length = 800;
+    } else if (video == LIME_ROCK_RACE_VIDEO) {
+        focal_length = 914;
+    }
+
     TestData test_data = {
-        .video_loader = slam::VideoLoader("videos/lime-rock-race.mp4"),
-        .camera = slam::Camera(914,
+        .video_loader = slam::VideoLoader(std::string(video)),
+        .camera = slam::Camera(focal_length,
                                test_data.video_loader.get_width(),
                                test_data.video_loader.get_height()),
     };
+
     cv::Mat mask = cv::Mat::zeros(test_data.video_loader.get_height(),
                                   test_data.video_loader.get_width(),
                                   CV_8UC1);
-    mask(cv::Rect(0,
-                  0,
-                  test_data.video_loader.get_width(),
-                  test_data.video_loader.get_height() * 0.7)) = 255;
+    if (video == LIME_ROCK_RACE_VIDEO) {
+        mask(cv::Rect(0, 0, mask.cols, mask.rows * 0.7)) = 255;
+    } else if (video == HIGHWAY_VIDEO) {
+        mask(cv::Rect(0, 0, mask.cols, mask.rows)) = 255;
+    }
     test_data.static_mask = mask;
+
     return test_data;
 }

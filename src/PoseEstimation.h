@@ -10,12 +10,13 @@ namespace slam::pose {
 
 struct PoseEstimate {
     Eigen::Matrix4f pose;
-    std::vector<FeatureMatch> inlier_matches;
+    std::vector<FeatureMatch> inlier_matches; // Matches that were used to estimate the pose
 };
 
-PoseEstimate estimate_pose(const std::vector<FeatureMatch>& matches,
-                           const ExtractedFeatures& prev_features,
+/* Returns the relative pose - change of basis from prev_features to features */
+PoseEstimate estimate_pose(const ExtractedFeatures& prev_features,
                            const ExtractedFeatures& features,
+                           const std::vector<FeatureMatch>& matches,
                            const Camera& camera);
 
 } // namespace slam::pose

@@ -1,10 +1,10 @@
 #pragma once
 
+#include <optional>
+
 #include "Camera.h"
 #include "Map.h"
 #include "VideoLoader.h"
-
-#include <optional>
 
 namespace slam {
 
@@ -15,9 +15,10 @@ class Slam {
     void initialize();
     void step();
 
+    float reprojection_error() const;
     const Map& map() const;
     const Frame& frame() const;
-    const std::vector<Eigen::Matrix4f>& poses() const;
+    std::vector<Eigen::Matrix4f> poses() const;
 
   private:
     // Configuration
@@ -30,7 +31,6 @@ class Slam {
     Map m_map;
     std::vector<std::shared_ptr<Frame>> m_key_frames;
     std::shared_ptr<Frame> m_frame;
-    std::vector<Eigen::Matrix4f> m_poses;
 
     // Private methods
     std::optional<Frame> process_next_frame();
