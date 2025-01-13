@@ -4,6 +4,8 @@
 #include <opencv2/core/eigen.hpp>
 #include <opencv2/opencv.hpp>
 
+#include "Frame.h"
+
 namespace slam::triangulation {
 
 std::pair<std::vector<Eigen::Vector2f>, std::vector<Eigen::Vector2f>>
@@ -21,6 +23,15 @@ get_matching_points(const ExtractedFeatures& features1,
         points2.push_back(Eigen::Vector2f(p2_cv.x, p2_cv.y));
     }
     return std::make_pair(points1, points2);
+}
+
+std::vector<TriangulatedPoint> triangulate_points(const Frame& frame1,
+                                                  const Frame& frame2,
+                                                  const std::vector<FeatureMatch>& matches,
+                                                  const Camera& camera)
+{
+    auto [points1, points2] = get_matching_points(frame1.features(), frame2.features(), matches);
+    return triangulate_points(points1, points2, frame1.pose(), frame2.pose(), camera);
 }
 
 std::vector<TriangulatedPoint> triangulate_points(const std::vector<Eigen::Vector2f>& points1,
@@ -66,7 +77,7 @@ std::vector<TriangulatedPoint> triangulate_points(const std::vector<Eigen::Vecto
         auto point_to_cam2 = pose2.inverse().block<3, 1>(0, 3) - point;
         auto similarity = point_to_cam1.normalized().dot(point_to_cam2.normalized());
         if (similarity > 0.99998) {
-            continue;
+            // continue;
         }
 
         // Convert to image coordinates

@@ -24,4 +24,9 @@ std::vector<TriangulatedPoint> triangulate_points(const std::vector<Eigen::Vecto
                                                   const Eigen::Matrix4f& pose2,
                                                   const Camera& camera);
 
+std::vector<TriangulatedPoint> triangulate_points(const Frame& frame1,
+                                                  const Frame& frame2,
+                                                  const std::vector<FeatureMatch>& matches,
+                                                  const Camera& camera);
+;
 } // namespace slam::triangulation
