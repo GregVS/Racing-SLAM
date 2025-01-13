@@ -1,7 +1,7 @@
 #pragma once
 
-#include <opencv2/opencv.hpp>
 #include <Eigen/Dense>
+#include <opencv2/opencv.hpp>
 #include <vector>
 
 namespace slam {
@@ -48,9 +48,12 @@ ExtractedFeatures extract_features(const cv::Mat& image,
 std::vector<FeatureMatch> match_features(const ExtractedFeatures& prev_features,
                                          const ExtractedFeatures& features);
 
-std::vector<MapPointMatch> match_features(const Frame& frame,
-                                          const Camera& camera,
-                                          const Map& map);
+std::vector<MapPointMatch> match_features(const Frame& frame, const Camera& camera, const Map& map);
+
+std::vector<FeatureMatch> unmatched_features(const Frame& frame1,
+                                             const Frame& frame2,
+                                             const std::vector<FeatureMatch>& matches);
+
 }; // namespace features
 
 }; // namespace slam

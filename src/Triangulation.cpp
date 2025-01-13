@@ -72,12 +72,12 @@ std::vector<TriangulatedPoint> triangulate_points(const std::vector<Eigen::Vecto
             continue;
         }
 
-        // Filter points with low parallax
+        // Filter points with very low parallax
         auto point_to_cam1 = pose1.inverse().block<3, 1>(0, 3) - point;
         auto point_to_cam2 = pose2.inverse().block<3, 1>(0, 3) - point;
         auto similarity = point_to_cam1.normalized().dot(point_to_cam2.normalized());
         if (similarity > 0.99998) {
-            // continue;
+            continue;
         }
 
         // Convert to image coordinates

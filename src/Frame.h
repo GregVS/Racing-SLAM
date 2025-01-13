@@ -16,6 +16,7 @@ class Frame {
     const cv::Mat& image() const;
 
     void add_map_match(const MapPointMatch& match);
+    void remove_map_match(const MapPointMatch& match);
     void set_pose(const Eigen::Matrix4f& pose);
 
     const ExtractedFeatures& features() const;

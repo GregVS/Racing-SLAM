@@ -23,7 +23,7 @@ void Visualization::initialize(int width, int height)
     glEnable(GL_DEPTH_TEST);
 
     m_camera_state = new pangolin::OpenGlRenderState(
-        pangolin::ProjectionMatrix(width, height, 420, 420, width / 2, height / 2, 0.2, 1000),
+        pangolin::ProjectionMatrix(width, height, 420, 420, width / 2, height / 2, 0.2, 4000),
         pangolin::ModelViewLookAt(-2, -2, -2, 0, 0, 5, pangolin::AxisNegY));
 
     m_handler = new pangolin::Handler3D(*m_camera_state, pangolin::AxisNegY);
@@ -120,6 +120,7 @@ void Visualization::run()
             m_image_display->Activate();
             if (!m_image.empty()) {
                 if (!m_image_texture) {
+                    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
                     m_image_texture = std::make_unique<pangolin::GlTexture>(m_image.cols,
                                                                             m_image.rows,
                                                                             GL_RGB,

@@ -15,7 +15,7 @@ ExtractedFeatures extract_features(const cv::Mat& image, const cv::InputArray& m
     cv::Mat descriptors;
 
     // Feature extraction and description
-    cv::Ptr<cv::Feature2D> extractor = cv::GFTTDetector::create(1000, 0.01, 20);
+    cv::Ptr<cv::Feature2D> extractor = cv::GFTTDetector::create(3000, 0.005, 7);
     extractor->detect(gray_image, keypoints, mask);
 
     for (auto& keypoint : keypoints) {
@@ -60,7 +60,7 @@ std::vector<MapPointMatch> match_features(const Frame& frame, const Camera& came
             continue;
 
         // Compare to features in the region
-        auto feature_indices = frame.features_in_region(image_point, 15);
+        auto feature_indices = frame.features_in_region(image_point, 30);
 
         // Find the closest match
         size_t best_match_index = 0;
@@ -96,6 +96,17 @@ std::vector<MapPointMatch> match_features(const Frame& frame, const Camera& came
         }
     }
     return final_matches;
+}
+
+std::vector<FeatureMatch> unmatched_features(const Frame& frame1, const Frame& frame2, const std::vector<FeatureMatch>& matches)
+{
+    std::vector<FeatureMatch> unmatched;
+    for (const auto& match : matches) {
+        if (!frame1.is_matched(match.query_index) && !frame2.is_matched(match.train_index)) {
+            unmatched.push_back(match);
+        }
+    }
+    return unmatched;
 }
 
 } // namespace slam::features

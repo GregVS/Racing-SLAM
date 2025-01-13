@@ -17,13 +17,13 @@ class MapPoint {
 
     void set_position(const Eigen::Vector3f& position);
 
-    void add_observation(const Frame* key_frame, int index);
+    void add_observation(const Frame* key_frame, size_t index);
 
-    const std::unordered_map<const Frame*, int>& observations() const;
+    const std::unordered_map<const Frame*, size_t>& observations() const;
 
   private:
     Eigen::Vector3f m_position;
-    std::unordered_map<const Frame*, int> m_observations;
+    std::unordered_map<const Frame*, size_t> m_observations;
 };
 
 class Map {
@@ -33,6 +33,8 @@ class Map {
     void add_point(const Eigen::Vector3f& position);
 
     void add_point(std::unique_ptr<MapPoint>&& point);
+
+    void remove_point(MapPoint* point);
 
     // Const iterator for map points
     class const_iterator {

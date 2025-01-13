@@ -1,5 +1,7 @@
 #include "Map.h"
 
+#include "Frame.h"
+
 namespace slam {
 
 // Map Point
@@ -17,12 +19,12 @@ void MapPoint::set_position(const Eigen::Vector3f& position)
     m_position = position;
 }
 
-void MapPoint::add_observation(const Frame* key_frame, int index)
+void MapPoint::add_observation(const Frame* key_frame, size_t index)
 {
     m_observations[key_frame] = index;
 }
 
-const std::unordered_map<const Frame*, int>& MapPoint::observations() const
+const std::unordered_map<const Frame*, size_t>& MapPoint::observations() const
 {
     return m_observations;
 }
@@ -40,6 +42,19 @@ void Map::add_point(const Eigen::Vector3f& position)
 void Map::add_point(std::unique_ptr<MapPoint>&& point)
 {
     m_points.insert(std::move(point));
+}
+
+void Map::remove_point(MapPoint* point)
+{
+    for (const auto& map_point : m_points) {
+        if (map_point.get() == point) {
+            for (const auto& [frame, index] : map_point->observations()) {
+                const_cast<Frame*>(frame)->remove_map_match({*map_point, index});
+            }
+            m_points.erase(map_point);
+            break;
+        }
+    }
 }
 
 // Const Map Point Iterator

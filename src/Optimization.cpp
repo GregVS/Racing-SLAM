@@ -107,6 +107,26 @@ void optimize(const OptimizationConfig& config, const Camera& camera, Map& map)
                                                        point.position().z()});
     }
 
+    std::unordered_set<const Frame*> frames_to_optimize;
+    for (const auto& [optimize_frame, frame] : config.frames) {
+        if (optimize_frame) {
+            frames_to_optimize.insert(frame);
+        }
+    }
+
+    std::unordered_set<const MapPoint*> points_to_optimize;
+    if (config.optimize_points) {
+        for (const auto& point : map) {
+            // Check if any observed frames are being optimized
+            for (const auto& match : point.observations()) {
+                if (frames_to_optimize.find(match.first) != frames_to_optimize.end()) {
+                    points_to_optimize.insert(&point);
+                    break;
+                }
+            }
+        }
+    }
+
     // Setup problem
     for (const auto& [optimize_frame, frame] : config.frames) {
         for (const auto& match : frame->map_matches()) {
@@ -121,11 +141,11 @@ void optimize(const OptimizationConfig& config, const Camera& camera, Map& map)
                                      frame_params[frame].data(),
                                      map_point_params[&match.point].data());
 
-            if (!config.optimize_points) {
+            if (points_to_optimize.find(&match.point) == points_to_optimize.end()) {
                 problem.SetParameterBlockConstant(map_point_params[&match.point].data());
             }
 
-            if (!optimize_frame) {
+            if (frames_to_optimize.find(frame) == frames_to_optimize.end()) {
                 problem.SetParameterBlockConstant(frame_params[frame].data());
             }
         }
@@ -138,11 +158,11 @@ void optimize(const OptimizationConfig& config, const Camera& camera, Map& map)
     options.max_num_iterations = 10;
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
-    std::cout << summary.FullReport() << std::endl;
+    std::cout << summary.BriefReport() << std::endl;
 
     // Extract optimized pose
     for (const auto& [optimize, frame] : config.frames) {
-        if (!optimize) {
+        if (frames_to_optimize.find(frame) == frames_to_optimize.end()) {
             continue;
         }
 
@@ -156,18 +176,17 @@ void optimize(const OptimizationConfig& config, const Camera& camera, Map& map)
         pose.block<3, 3>(0, 0) = rodrigues_to_matrix(rvec);
         pose.block<3, 1>(0, 3) = tvec;
         frame->set_pose(pose);
-
-        std::cout << "Frame " << frame->index() << " pose: " << pose.block<3, 1>(0, 3).transpose()
-                  << std::endl;
     }
 
     // Extract optimized map points
-    if (config.optimize_points) {
-        for (auto& point : map) {
-            point.set_position(Eigen::Vector3f(map_point_params[&point][0],
-                                               map_point_params[&point][1],
-                                               map_point_params[&point][2]));
+    for (auto& point : map) {
+        if (points_to_optimize.find(&point) == points_to_optimize.end()) {
+            continue;
         }
+
+        point.set_position(Eigen::Vector3f(map_point_params[&point][0],
+                                           map_point_params[&point][1],
+                                           map_point_params[&point][2]));
     }
 }
 

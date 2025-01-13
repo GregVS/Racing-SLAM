@@ -12,7 +12,7 @@
 
 int main(int argc, char* argv[])
 {
-    auto test_data = load_test_data(LIME_ROCK_RACE_VIDEO);
+    auto test_data = load_test_data(OKAYAMA_VIDEO);
     auto frames = test_data.video_loader.get_all_frames();
     std::vector<Eigen::Matrix4f> poses = {Eigen::Matrix4f::Identity()};
 

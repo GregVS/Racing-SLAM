@@ -24,6 +24,7 @@ template <typename T> T time_it(const std::string& name, std::function<T()> func
 
 constexpr std::string_view LIME_ROCK_RACE_VIDEO = "videos/lime-rock-race.mp4";
 constexpr std::string_view HIGHWAY_VIDEO = "videos/highway.mp4";
+constexpr std::string_view OKAYAMA_VIDEO = "videos/okayama-lap.mp4";
 
 static TestData load_test_data(std::string_view video = LIME_ROCK_RACE_VIDEO)
 {
@@ -32,6 +33,8 @@ static TestData load_test_data(std::string_view video = LIME_ROCK_RACE_VIDEO)
         focal_length = 800;
     } else if (video == LIME_ROCK_RACE_VIDEO) {
         focal_length = 914;
+    } else if (video == OKAYAMA_VIDEO) {
+        focal_length = 236;
     }
 
     TestData test_data = {
@@ -48,6 +51,8 @@ static TestData load_test_data(std::string_view video = LIME_ROCK_RACE_VIDEO)
         mask(cv::Rect(0, 0, mask.cols, mask.rows * 0.7)) = 255;
     } else if (video == HIGHWAY_VIDEO) {
         mask(cv::Rect(0, 0, mask.cols, mask.rows)) = 255;
+    } else if (video == OKAYAMA_VIDEO) {
+        mask = cv::imread("videos/okayama-lap-mask.png", cv::IMREAD_GRAYSCALE);
     }
     test_data.static_mask = mask;
 

@@ -44,6 +44,11 @@ void Frame::add_map_match(const MapPointMatch& match)
     m_map_matches[match.keypoint_index] = &match.point;
 }
 
+void Frame::remove_map_match(const MapPointMatch& match)
+{
+    m_map_matches[match.keypoint_index] = nullptr;
+}
+
 const MapPoint& Frame::map_match(size_t index) const
 {
     return *m_map_matches[index];
