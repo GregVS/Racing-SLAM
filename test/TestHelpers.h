@@ -23,25 +23,29 @@ template <typename T> T time_it(const std::string& name, std::function<T()> func
 }
 
 constexpr std::string_view LIME_ROCK_RACE_VIDEO = "videos/lime-rock-race.mp4";
-constexpr std::string_view HIGHWAY_VIDEO = "videos/highway.mp4";
+constexpr std::string_view HIGHWAY_VIDEO = "videos/highway-lowres.mp4";
 constexpr std::string_view OKAYAMA_VIDEO = "videos/okayama-lap.mp4";
 
 static TestData load_test_data(std::string_view video = LIME_ROCK_RACE_VIDEO)
 {
-    int focal_length;
+    auto video_loader = slam::VideoLoader(std::string(video));
+
+    float FOV;
     if (video == HIGHWAY_VIDEO) {
-        focal_length = 800;
+        FOV = 120;
     } else if (video == LIME_ROCK_RACE_VIDEO) {
-        focal_length = 914;
+        FOV = 70;
     } else if (video == OKAYAMA_VIDEO) {
-        focal_length = 236;
+        FOV = 120;
     }
 
+    int focal_length = (float) video_loader.get_width() / (2.0 * tan(FOV * M_PI / 360));
+    std::cout << "Focal length: " << focal_length << std::endl;
     TestData test_data = {
-        .video_loader = slam::VideoLoader(std::string(video)),
+        .video_loader = video_loader,
         .camera = slam::Camera(focal_length,
                                test_data.video_loader.get_width(),
-                               test_data.video_loader.get_height()),
+                               test_data.video_loader.get_height())
     };
 
     cv::Mat mask = cv::Mat::zeros(test_data.video_loader.get_height(),

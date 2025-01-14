@@ -17,6 +17,7 @@ class MapPoint {
 
     void add_observation(const Frame* key_frame, size_t index);
     const std::unordered_map<const Frame*, size_t>& observations() const;
+    bool is_observed_by(const Frame* key_frame) const;
 
     const cv::Vec3b& color() const;
     void set_color(const cv::Vec3b& color);

@@ -9,7 +9,7 @@ int main()
         .triangulate_points = true,
         .bundle_adjust = true,
         .optimize_pose = true,
-        .cull_points = true,
+        .cull_points = false,
         .essential_matrix_estimation = true,
     };
     slam::Slam slam(test_data.video_loader, test_data.camera, test_data.static_mask, config);
@@ -22,7 +22,9 @@ int main()
 
     while (!visualization.has_quit()) {
         // Draw the camera poses
-        visualization.set_camera_poses(slam.poses());
+        auto poses = slam.poses();
+        poses.push_back(slam.frame().pose());
+        visualization.set_camera_poses(poses);
 
         // Draw the map points
         std::vector<slam::Visualization::Point> points;

@@ -44,7 +44,7 @@ std::vector<FeatureMatch> match_features(const ExtractedFeatures& prev_features,
     return feature_matches;
 }
 
-std::vector<MapPointMatch> match_features(const Frame& frame, const Camera& camera, const Map& map)
+std::vector<MapPointMatch> match_features(const Frame& frame, const Camera& camera, const Map& map, std::function<bool(const MapPoint&)> point_filter)
 {
     struct ProposedMatch {
         const MapPoint* point = nullptr;
@@ -54,10 +54,15 @@ std::vector<MapPointMatch> match_features(const Frame& frame, const Camera& came
 
     std::vector<ProposedMatch> proposed_matches(frame.features().keypoints.size());
     for (const auto& point : map) {
+        if (!point_filter(point)) {
+            continue;
+        }
+
         // Project point into image
         auto image_point = camera.project(frame.pose(), point.position());
-        if (!camera.is_in_image(image_point))
+        if (!camera.is_in_image(image_point)) {
             continue;
+        }
 
         // Compare to features in the region
         auto feature_indices = frame.features_in_region(image_point, 10);

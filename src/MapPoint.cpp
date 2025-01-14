@@ -29,6 +29,11 @@ const std::unordered_map<const Frame*, size_t>& MapPoint::observations() const
     return m_observations;
 }
 
+bool MapPoint::is_observed_by(const Frame* key_frame) const
+{
+    return m_observations.find(key_frame) != m_observations.end();
+}
+
 const cv::Vec3b& MapPoint::color() const
 {
     return m_color;

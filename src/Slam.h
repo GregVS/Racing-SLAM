@@ -47,6 +47,11 @@ class Slam {
     // Private methods
     std::optional<Frame> process_next_frame();
     void cull_points();
+    void initial_pose_estimate(Frame& frame);
+    void match_with_last_key_frame(Frame& frame);
+    void optimize_pose(Frame& frame);
+    void match_with_map(Frame& frame);
+    void init_key_frame(Frame& frame);
 };
 
 } // namespace slam
