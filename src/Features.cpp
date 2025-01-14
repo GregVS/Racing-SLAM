@@ -60,14 +60,14 @@ std::vector<MapPointMatch> match_features(const Frame& frame, const Camera& came
             continue;
 
         // Compare to features in the region
-        auto feature_indices = frame.features_in_region(image_point, 30);
+        auto feature_indices = frame.features_in_region(image_point, 10);
 
         // Find the closest match
         size_t best_match_index = 0;
         float best_match_distance = MAX_ORB_DISTANCE_TO_MAP;
 
         for (const auto& index : feature_indices) {
-            const auto& descriptor = frame.descriptor(index);
+            const auto descriptor = frame.descriptor(index);
 
             // Ensure it is within the distance threshold
             for (const auto& [obs_keyframe, obs_index] : point.observations()) {

@@ -54,6 +54,13 @@ const MapPoint& Frame::map_match(size_t index) const
     return *m_map_matches[index];
 }
 
+size_t Frame::num_map_matches() const
+{
+    return std::count_if(m_map_matches.begin(), m_map_matches.end(), [](const MapPoint* point) {
+        return point != nullptr;
+    });
+}
+
 const cv::Mat Frame::descriptor(size_t index) const
 {
     return m_features.descriptors.row(index);

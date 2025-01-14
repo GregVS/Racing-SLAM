@@ -83,9 +83,10 @@ namespace slam::optimization {
 void optimize(const OptimizationConfig& config, const Camera& camera, Map& map)
 {
     auto problem = ceres::Problem();
+    std::unordered_map<const Frame*, std::array<double, 6>> frame_params;
+    std::unordered_map<const MapPoint*, std::array<double, 3>> map_point_params;
 
     // Add pose parameters
-    std::unordered_map<const Frame*, std::array<double, 6>> frame_params;
     for (const auto& [_, frame] : config.frames) {
         frame_params.emplace(frame, std::array<double, 6>{0, 0, 0, 0, 0, 0});
         auto rvec = matrix_to_rodrigues(frame->pose().block<3, 3>(0, 0));
@@ -98,30 +99,21 @@ void optimize(const OptimizationConfig& config, const Camera& camera, Map& map)
         frame_params[frame][5] = tvec[2];
     }
 
-    // Add map point parameters
-    std::unordered_map<const MapPoint*, std::array<double, 3>> map_point_params;
-    for (const auto& point : map) {
-        map_point_params.emplace(&point,
-                                 std::array<double, 3>{point.position().x(),
-                                                       point.position().y(),
-                                                       point.position().z()});
-    }
-
+    // Add points
     std::unordered_set<const Frame*> frames_to_optimize;
+    std::unordered_set<const MapPoint*> points_to_optimize;
     for (const auto& [optimize_frame, frame] : config.frames) {
         if (optimize_frame) {
             frames_to_optimize.insert(frame);
-        }
-    }
 
-    std::unordered_set<const MapPoint*> points_to_optimize;
-    if (config.optimize_points) {
-        for (const auto& point : map) {
-            // Check if any observed frames are being optimized
-            for (const auto& match : point.observations()) {
-                if (frames_to_optimize.find(match.first) != frames_to_optimize.end()) {
+            for (auto match : frame->map_matches()) {
+                const auto& point = match.point;
+                map_point_params.emplace(&point,
+                                         std::array<double, 3>{point.position().x(),
+                                                               point.position().y(),
+                                                               point.position().z()});
+                if (config.optimize_points) {
                     points_to_optimize.insert(&point);
-                    break;
                 }
             }
         }
@@ -130,6 +122,10 @@ void optimize(const OptimizationConfig& config, const Camera& camera, Map& map)
     // Setup problem
     for (const auto& [optimize_frame, frame] : config.frames) {
         for (const auto& match : frame->map_matches()) {
+            if (map_point_params.find(&match.point) == map_point_params.end()) {
+                continue;
+            }
+
             auto cost_function = ReprojectionError::Create(
                 frame->keypoint(match.keypoint_index).pt.x,
                 frame->keypoint(match.keypoint_index).pt.y,
@@ -154,8 +150,8 @@ void optimize(const OptimizationConfig& config, const Camera& camera, Map& map)
     // Solve problem
     ceres::Solver::Options options;
     options.linear_solver_type = ceres::SPARSE_SCHUR;
-    options.minimizer_progress_to_stdout = true;
-    options.max_num_iterations = 10;
+    // options.minimizer_progress_to_stdout = true;
+    // options.max_num_iterations = 10;
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
     std::cout << summary.BriefReport() << std::endl;

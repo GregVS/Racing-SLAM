@@ -1,4 +1,5 @@
 #include "MapPoint.h"
+
 #include "Frame.h"
 
 using slam::Frame;
@@ -6,7 +7,6 @@ using slam::MapPoint;
 
 MapPoint::MapPoint(const Eigen::Vector3f& position) : m_position(position), m_color(255, 255, 255)
 {
-
 }
 
 const Eigen::Vector3f& MapPoint::position() const
@@ -38,4 +38,3 @@ void MapPoint::set_color(const cv::Vec3b& color)
 {
     m_color = color;
 }
-

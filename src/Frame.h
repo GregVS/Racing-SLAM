@@ -10,24 +10,6 @@ namespace slam {
 
 class Frame {
   public:
-    Frame(int index, const cv::Mat& image, const ExtractedFeatures& features);
-
-    size_t index() const;
-    const cv::Mat& image() const;
-
-    void add_map_match(const MapPointMatch& match);
-    void remove_map_match(const MapPointMatch& match);
-    void set_pose(const Eigen::Matrix4f& pose);
-
-    const ExtractedFeatures& features() const;
-    const cv::Mat descriptor(size_t index) const;
-    const cv::KeyPoint& keypoint(size_t index) const;
-    const MapPoint& map_match(size_t index) const;
-    const Eigen::Matrix4f& pose() const;
-
-    std::vector<size_t> features_in_region(const Eigen::Vector2f& uv, float radius) const;
-    bool is_matched(size_t keypoint_index) const;
-
     class MapPointIterator {
       public:
         MapPointIterator(const Frame& frame, size_t index);
@@ -43,6 +25,24 @@ class Frame {
         size_t m_index;
     };
 
+    Frame(int index, const cv::Mat& image, const ExtractedFeatures& features);
+
+    size_t index() const;
+    const cv::Mat& image() const;
+
+    const cv::Mat descriptor(size_t index) const;
+    const cv::KeyPoint& keypoint(size_t index) const;
+    std::vector<size_t> features_in_region(const Eigen::Vector2f& uv, float radius) const;
+    const ExtractedFeatures& features() const;
+
+    const Eigen::Matrix4f& pose() const;
+    void set_pose(const Eigen::Matrix4f& pose);
+
+    void add_map_match(const MapPointMatch& match);
+    void remove_map_match(const MapPointMatch& match);
+    const MapPoint& map_match(size_t index) const;
+    bool is_matched(size_t keypoint_index) const;
+    size_t num_map_matches() const;
     MapPointIterator map_matches() const;
 
   private:

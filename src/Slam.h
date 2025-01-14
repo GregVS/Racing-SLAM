@@ -42,7 +42,7 @@ class Slam {
     size_t m_frame_index = 0;
     Map m_map;
     std::vector<std::shared_ptr<Frame>> m_key_frames;
-    std::shared_ptr<Frame> m_frame;
+    std::shared_ptr<Frame> m_last_frame;
 
     // Private methods
     std::optional<Frame> process_next_frame();

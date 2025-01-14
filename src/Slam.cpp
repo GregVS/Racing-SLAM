@@ -77,7 +77,7 @@ void Slam::initialize()
     // Add frames to key frames
     m_key_frames.push_back(ref_frame);
     m_key_frames.push_back(query_frame);
-    m_frame = query_frame;
+    m_last_frame = query_frame;
 }
 
 void Slam::step()
@@ -88,25 +88,24 @@ void Slam::step()
         return;
     }
 
-    const auto& last_frame = m_key_frames.back();
     auto frame = std::make_shared<Frame>(std::move(*maybe_frame));
 
     // Initial pose estimation
     if (m_config.essential_matrix_estimation) {
         auto pose_estimate = pose::estimate_pose(
-            last_frame->features(),
+            m_last_frame->features(),
             frame->features(),
-            features::match_features(last_frame->features(), frame->features()),
+            features::match_features(m_last_frame->features(), frame->features()),
             m_camera);
-        frame->set_pose(pose_estimate.pose * last_frame->pose());
+        frame->set_pose(pose_estimate.pose * m_last_frame->pose());
     } else {
-        frame->set_pose(last_frame->pose());
+        frame->set_pose(m_last_frame->pose());
     }
 
     // Match with map
     auto map_matches = features::match_features(*frame, m_camera, m_map);
     for (const auto& match : map_matches) {
-        m_map.add_association(*frame, match);
+        frame->add_map_match(match);
     }
     std::cout << "Number of map matches: " << map_matches.size() << std::endl;
 
@@ -119,40 +118,56 @@ void Slam::step()
         optimization::optimize(config, m_camera, m_map);
     }
 
-    // // Triangulate unmatched points
-    if (m_config.triangulate_points) {
-        auto feature_matches = features::match_features(last_frame->features(), frame->features());
-        auto unmatched = features::unmatched_features(*last_frame, *frame, feature_matches);
-        auto points = triangulation::triangulate_points(*last_frame, *frame, unmatched, m_camera);
-        for (int i = 0; i < points.size(); i++) {
-            auto match = unmatched[points[i].match_index];
-            m_map.create_point(points[i].position, *last_frame, *frame, match);
-        }
-        std::cout << "Number of triangulated points: " << points.size() << std::endl;
-    }
+    auto last_key_frame = m_key_frames.back();
+    if (frame->num_map_matches() < 0.9 * last_key_frame->num_map_matches()) {
+        std::cout << "Too few map matches, adding points" << std::endl;
 
-    // Bundle adjustment
-    if (m_config.bundle_adjust) {
-        std::vector<optimization::FrameConfig> frame_configs;
-        for (const auto& frame : m_key_frames) {
-            frame_configs.push_back({false, frame.get()});
+        // Add map associations
+        for (const auto& match : frame->map_matches()) {
+            m_map.add_association(*frame, match);
         }
-        frame_configs.push_back({true, frame.get()});
-        auto config = optimization::OptimizationConfig{
-            .optimize_points = true,
-            .frames = frame_configs,
-        };
-        optimization::optimize(config, m_camera, m_map);
-    }
 
-    // Cull points
-    if (m_config.cull_points) {
-        cull_points();
+        // Triangulate unmatched points
+        if (m_config.triangulate_points) {
+            auto feature_matches = features::match_features(last_key_frame->features(),
+                                                            frame->features());
+            auto unmatched = features::unmatched_features(*last_key_frame, *frame, feature_matches);
+            auto points = triangulation::triangulate_points(*last_key_frame,
+                                                            *frame,
+                                                            unmatched,
+                                                            m_camera);
+            for (int i = 0; i < points.size(); i++) {
+                auto match = unmatched[points[i].match_index];
+                m_map.create_point(points[i].position, *last_key_frame, *frame, match);
+            }
+            std::cout << "Number of triangulated points: " << points.size() << std::endl;
+        }
+
+        // Bundle adjustment
+        if (m_config.bundle_adjust) {
+            std::vector<optimization::FrameConfig> frame_configs;
+            for (const auto& frame : m_key_frames) {
+                frame_configs.push_back({false, frame.get()});
+            }
+            frame_configs.push_back({true, frame.get()});
+            auto config = optimization::OptimizationConfig{
+                .optimize_points = true,
+                .frames = frame_configs,
+            };
+            optimization::optimize(config, m_camera, m_map);
+        }
+
+        // Cull points
+        if (m_config.cull_points) {
+            cull_points();
+        }
+
+        m_key_frames.push_back(frame);
     }
 
     // Add frame to key frames
-    m_key_frames.push_back(frame);
-    m_frame = frame;
+    m_last_frame = frame;
+    std::cout << "----------------------------------------" << std::endl;
 }
 
 void Slam::cull_points()
@@ -203,7 +218,7 @@ const Map& Slam::map() const
 
 const Frame& Slam::frame() const
 {
-    return *m_frame;
+    return *m_last_frame;
 }
 
 std::vector<Eigen::Matrix4f> Slam::poses() const
