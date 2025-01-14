@@ -13,11 +13,16 @@ namespace slam {
 
 class Visualization {
 public:
+    struct Point {
+        Eigen::Vector3f position;
+        cv::Vec3b color;
+    };
+
     Visualization(const std::string& window_name = "3D Viewer");
     ~Visualization();
 
     void set_camera_poses(const std::vector<Eigen::Matrix4f>& poses);
-    void set_points(const std::vector<Eigen::Vector3f>& points);
+    void set_points(const std::vector<Point>& points);
     void set_image(const cv::Mat& image);
 
     void initialize(int width = 1024, int height = 1024);
@@ -27,9 +32,11 @@ public:
     bool has_quit() const;
     
 private:
-    void draw_camera_pose(const Eigen::Matrix4f& pose);
-    void draw_points(const std::vector<Eigen::Vector3f>& points);
+    void draw_camera_poses();
+    void draw_points();
+    void draw_image();
     
+    // Pangolin
     std::string m_window_name;
     pangolin::OpenGlRenderState* m_camera_state = nullptr;
     pangolin::Handler3D* m_handler = nullptr;
@@ -42,7 +49,7 @@ private:
     // Data to render
     std::mutex m_render_lock;
     std::vector<Eigen::Matrix4f> m_poses;
-    std::vector<Eigen::Vector3f> m_points;
+    std::vector<Point> m_points;
     cv::Mat m_image;
     std::unique_ptr<pangolin::GlTexture> m_image_texture;
 

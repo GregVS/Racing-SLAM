@@ -1,33 +1,7 @@
 #include "Map.h"
-
 #include "Frame.h"
 
 namespace slam {
-
-// Map Point
-MapPoint::MapPoint(const Eigen::Vector3f& position) : m_position(position)
-{
-}
-
-const Eigen::Vector3f& MapPoint::position() const
-{
-    return m_position;
-}
-
-void MapPoint::set_position(const Eigen::Vector3f& position)
-{
-    m_position = position;
-}
-
-void MapPoint::add_observation(const Frame* key_frame, size_t index)
-{
-    m_observations[key_frame] = index;
-}
-
-const std::unordered_map<const Frame*, size_t>& MapPoint::observations() const
-{
-    return m_observations;
-}
 
 // Map
 Map::Map()
@@ -44,6 +18,25 @@ void Map::add_point(std::unique_ptr<MapPoint>&& point)
     m_points.insert(std::move(point));
 }
 
+void Map::create_point(const Eigen::Vector3f& position, Frame& frame1, Frame& frame2, FeatureMatch& match)
+{
+    auto point = std::make_unique<MapPoint>(position);
+
+    // Add associations
+    point->add_observation(&frame1, match.train_index);
+    point->add_observation(&frame2, match.query_index);
+    frame1.add_map_match(MapPointMatch{*point, match.train_index});
+    frame2.add_map_match(MapPointMatch{*point, match.query_index});
+
+    // Set color
+    auto uv = frame1.keypoint(match.train_index).pt;
+    auto bgr_color = frame1.image().at<cv::Vec3b>(uv.y, uv.x);
+    point->set_color(cv::Vec3b(bgr_color[2], bgr_color[1], bgr_color[0]));
+
+    // Add to map
+    m_points.insert(std::move(point));
+}
+
 void Map::remove_point(MapPoint* point)
 {
     for (const auto& map_point : m_points) {
@@ -55,6 +48,12 @@ void Map::remove_point(MapPoint* point)
             break;
         }
     }
+}
+
+void Map::add_association(Frame& frame, const MapPointMatch& match)
+{
+    const_cast<MapPoint&>(match.point).add_observation(&frame, match.keypoint_index);
+    frame.add_map_match(match);
 }
 
 // Const Map Point Iterator

@@ -25,9 +25,9 @@ int main()
         visualization.set_camera_poses(slam.poses());
 
         // Draw the map points
-        std::vector<Eigen::Vector3f> points;
+        std::vector<slam::Visualization::Point> points;
         for (const auto& point : slam.map()) {
-            points.push_back(point.position());
+            points.push_back({point.position(), point.color()});
         }
         visualization.set_points(points);
 
@@ -55,11 +55,7 @@ int main()
         }
         for (const auto& match : frame.map_matches()) {
             auto uv = test_data.camera.project(frame.pose(), match.point.position());
-            cv::circle(render,
-                       cv::Point2f(uv[0], uv[1]),
-                       2,
-                       cv::Scalar(0, 0, 255),
-                       -1);
+            cv::circle(render, cv::Point2f(uv[0], uv[1]), 2, cv::Scalar(0, 0, 255), -1);
         }
         visualization.set_image(render);
 

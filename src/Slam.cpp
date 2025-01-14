@@ -42,22 +42,14 @@ void Slam::initialize()
     std::cout << "Initializing frames: " << ref_frame->index() << " and " << query_frame->index()
               << std::endl;
 
-    auto matches = features::match_features(ref_frame->features(), query_frame->features());
-
     // Triangulate points
+    auto matches = features::match_features(ref_frame->features(), query_frame->features());
     auto points = triangulation::triangulate_points(*ref_frame, *query_frame, matches, m_camera);
 
     // Add points to map
     for (int i = 0; i < points.size(); i++) {
-        auto train_index = result.matches[points[i].match_index].train_index;
-        auto query_index = result.matches[points[i].match_index].query_index;
-
-        auto point = std::make_unique<MapPoint>(points[i].position);
-        point->add_observation(ref_frame.get(), train_index);
-        point->add_observation(query_frame.get(), query_index);
-        ref_frame->add_map_match(MapPointMatch{*point, train_index});
-        query_frame->add_map_match(MapPointMatch{*point, query_index});
-        m_map.add_point(std::move(point));
+        auto match = matches[points[i].match_index];
+        m_map.create_point(points[i].position, *ref_frame, *query_frame, match);
     }
     std::cout << "Number of triangulated points: " << points.size() << std::endl;
 
@@ -114,8 +106,7 @@ void Slam::step()
     // Match with map
     auto map_matches = features::match_features(*frame, m_camera, m_map);
     for (const auto& match : map_matches) {
-        frame->add_map_match(match);
-        const_cast<MapPoint&>(match.point).add_observation(frame.get(), match.keypoint_index);
+        m_map.add_association(*frame, match);
     }
     std::cout << "Number of map matches: " << map_matches.size() << std::endl;
 
@@ -134,14 +125,8 @@ void Slam::step()
         auto unmatched = features::unmatched_features(*last_frame, *frame, feature_matches);
         auto points = triangulation::triangulate_points(*last_frame, *frame, unmatched, m_camera);
         for (int i = 0; i < points.size(); i++) {
-            auto train_index = unmatched[points[i].match_index].train_index;
-            auto query_index = unmatched[points[i].match_index].query_index;
-            auto point = std::make_unique<MapPoint>(points[i].position);
-            point->add_observation(last_frame.get(), train_index);
-            point->add_observation(frame.get(), query_index);
-            last_frame->add_map_match(MapPointMatch{*point, train_index});
-            frame->add_map_match(MapPointMatch{*point, query_index});
-            m_map.add_point(std::move(point));
+            auto match = unmatched[points[i].match_index];
+            m_map.create_point(points[i].position, *last_frame, *frame, match);
         }
         std::cout << "Number of triangulated points: " << points.size() << std::endl;
     }

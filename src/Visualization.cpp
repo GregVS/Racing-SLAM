@@ -6,7 +6,9 @@
 
 namespace slam {
 
-Visualization::Visualization(const std::string& window_name) : m_window_name(window_name) {}
+Visualization::Visualization(const std::string& window_name) : m_window_name(window_name)
+{
+}
 
 Visualization::~Visualization()
 {
@@ -35,28 +37,20 @@ void Visualization::initialize(int width, int height)
     m_has_quit = false;
 }
 
-void Visualization::draw_camera_pose(const Eigen::Matrix4f& pose)
-{
-    const float camera_size = 0.4f;
-    const Eigen::Matrix4f inverse_pose = pose.inverse();
-
-    glPushMatrix();
-    glMultMatrixf(inverse_pose.data());
-
-    glColor3f(0.0f, 0.0f, 1.0f);
-    glBegin(GL_TRIANGLES);
-    glVertex3f(0, 0, 0);
-    glVertex3f(camera_size, 0, -camera_size);
-    glVertex3f(-camera_size, 0, -camera_size);
-    glEnd();
-
-    glPopMatrix();
-}
-
 void Visualization::wait_for_keypress()
 {
     std::unique_lock<std::mutex> lock(m_key_pressed_mutex);
     m_key_pressed_cv.wait(lock);
+}
+
+bool Visualization::has_quit() const
+{
+    return m_has_quit;
+}
+
+void Visualization::run_threaded()
+{
+    std::thread([this]() { run(); }).detach();
 }
 
 void Visualization::set_image(const cv::Mat& image)
@@ -72,21 +66,62 @@ void Visualization::set_camera_poses(const std::vector<Eigen::Matrix4f>& poses)
     m_poses = poses;
 }
 
-void Visualization::set_points(const std::vector<Eigen::Vector3f>& points)
+void Visualization::set_points(const std::vector<Point>& points)
 {
     std::lock_guard<std::mutex> lock(m_render_lock);
     m_points = points;
 }
 
-void Visualization::draw_points(const std::vector<Eigen::Vector3f>& points)
+void Visualization::draw_camera_poses()
 {
-    glPointSize(2);
+    for (const auto& pose : m_poses) {
+        const float camera_size = 0.4f;
+        const Eigen::Matrix4f inverse_pose = pose.inverse();
+
+        glPushMatrix();
+        glMultMatrixf(inverse_pose.data());
+
+        glColor3f(0.0f, 0.0f, 1.0f);
+        glBegin(GL_TRIANGLES);
+        glVertex3f(0, 0, 0);
+        glVertex3f(camera_size, 0, -camera_size);
+        glVertex3f(-camera_size, 0, -camera_size);
+        glEnd();
+
+        glPopMatrix();
+    }
+}
+
+void Visualization::draw_points()
+{
+    glPointSize(3);
     glBegin(GL_POINTS);
-    glColor3f(1.0f, 1.0f, 1.0f);
-    for (const auto& point : points) {
-        glVertex3f(point[0], point[1], point[2]);
+    for (const auto& point : m_points) {
+        glColor3ub(point.color[0], point.color[1], point.color[2]);
+        glVertex3f(point.position[0], point.position[1], point.position[2]);
     }
     glEnd();
+}
+
+void Visualization::draw_image()
+{
+    m_image_display->Activate();
+    if (!m_image.empty()) {
+        if (!m_image_texture) {
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            m_image_texture = std::make_unique<pangolin::GlTexture>(m_image.cols,
+                                                                    m_image.rows,
+                                                                    GL_RGB,
+                                                                    true,
+                                                                    0,
+                                                                    GL_RGB,
+                                                                    GL_UNSIGNED_BYTE);
+            m_image_texture->Upload(m_image.data, GL_RGB, GL_UNSIGNED_BYTE);
+        }
+
+        glColor3f(1.0f, 1.0f, 1.0f);
+        m_image_texture->RenderToViewport(true);
+    }
 }
 
 void Visualization::run()
@@ -112,28 +147,9 @@ void Visualization::run()
 
         {
             std::lock_guard<std::mutex> lock(m_render_lock);
-            for (const auto& pose : m_poses) {
-                draw_camera_pose(pose);
-            }
-            draw_points(m_points);
-
-            m_image_display->Activate();
-            if (!m_image.empty()) {
-                if (!m_image_texture) {
-                    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-                    m_image_texture = std::make_unique<pangolin::GlTexture>(m_image.cols,
-                                                                            m_image.rows,
-                                                                            GL_RGB,
-                                                                            true,
-                                                                            0,
-                                                                            GL_RGB,
-                                                                            GL_UNSIGNED_BYTE);
-                    m_image_texture->Upload(m_image.data, GL_RGB, GL_UNSIGNED_BYTE);
-                }
-
-                glColor3f(1.0f, 1.0f, 1.0f);
-                m_image_texture->RenderToViewport(true);
-            }
+            draw_camera_poses();
+            draw_points();
+            draw_image();
         }
 
         pangolin::FinishFrame();
@@ -145,13 +161,6 @@ void Visualization::run()
         m_key_pressed_cv.notify_all();
     }
     m_has_quit = true;
-}
-
-bool Visualization::has_quit() const { return m_has_quit; }
-
-void Visualization::run_threaded()
-{
-    std::thread([this]() { run(); }).detach();
 }
 
 } // namespace slam

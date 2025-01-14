@@ -3,28 +3,11 @@
 #include <Eigen/Dense>
 #include <memory>
 #include <unordered_set>
-#include <vector>
+
+#include "MapPoint.h"
+#include "Features.h"
 
 namespace slam {
-
-class Frame;
-
-class MapPoint {
-  public:
-    MapPoint(const Eigen::Vector3f& position);
-
-    const Eigen::Vector3f& position() const;
-
-    void set_position(const Eigen::Vector3f& position);
-
-    void add_observation(const Frame* key_frame, size_t index);
-
-    const std::unordered_map<const Frame*, size_t>& observations() const;
-
-  private:
-    Eigen::Vector3f m_position;
-    std::unordered_map<const Frame*, size_t> m_observations;
-};
 
 class Map {
   public:
@@ -34,7 +17,11 @@ class Map {
 
     void add_point(std::unique_ptr<MapPoint>&& point);
 
+    void create_point(const Eigen::Vector3f& position, Frame& frame1, Frame& frame2, FeatureMatch& match);
+
     void remove_point(MapPoint* point);
+
+    void add_association(Frame& frame, const MapPointMatch& match);
 
     // Const iterator for map points
     class const_iterator {
