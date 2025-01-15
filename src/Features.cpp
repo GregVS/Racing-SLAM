@@ -95,7 +95,7 @@ std::vector<MapPointMatch> match_features(const Frame& frame, const Camera& came
 
     std::vector<MapPointMatch> final_matches;
     for (const auto& proposed_match : proposed_matches) {
-        if (!frame.is_matched(proposed_match.keypoint_index) && proposed_match.point != nullptr) {
+        if (!frame.is_matched(proposed_match.keypoint_index) && !frame.is_matched(*proposed_match.point) && proposed_match.point != nullptr) {
             auto match = MapPointMatch{*proposed_match.point, proposed_match.keypoint_index};
             final_matches.push_back(match);
         }

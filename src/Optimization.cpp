@@ -150,8 +150,7 @@ void optimize(const OptimizationConfig& config, const Camera& camera, Map& map)
     // Solve problem
     ceres::Solver::Options options;
     options.linear_solver_type = ceres::SPARSE_SCHUR;
-    // options.minimizer_progress_to_stdout = true;
-    // options.max_num_iterations = 10;
+    options.max_num_iterations = 10;
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
     std::cout << summary.BriefReport() << std::endl;

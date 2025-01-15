@@ -42,11 +42,13 @@ void Frame::set_pose(const Eigen::Matrix4f& pose)
 void Frame::add_map_match(const MapPointMatch& match)
 {
     m_map_matches[match.keypoint_index] = &match.point;
+    m_matched_map_points.insert(&match.point);
 }
 
 void Frame::remove_map_match(const MapPointMatch& match)
 {
     m_map_matches[match.keypoint_index] = nullptr;
+    m_matched_map_points.erase(&match.point);
 }
 
 const MapPoint& Frame::map_match(size_t index) const
@@ -79,6 +81,11 @@ std::vector<size_t> Frame::features_in_region(const Eigen::Vector2f& uv, float r
 bool Frame::is_matched(size_t keypoint_index) const
 {
     return m_map_matches[keypoint_index] != nullptr;
+}
+
+bool Frame::is_matched(const MapPoint& point) const
+{
+    return m_matched_map_points.find(&point) != m_matched_map_points.end();
 }
 
 // MapPointIterator

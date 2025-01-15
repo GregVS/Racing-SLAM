@@ -2,6 +2,7 @@
 
 #include <Eigen/Dense>
 #include <opencv2/opencv.hpp>
+#include <unordered_set>
 
 #include "Features.h"
 #include "KDTree.h"
@@ -42,6 +43,7 @@ class Frame {
     void remove_map_match(const MapPointMatch& match);
     const MapPoint& map_match(size_t index) const;
     bool is_matched(size_t keypoint_index) const;
+    bool is_matched(const MapPoint& point) const;
     size_t num_map_matches() const;
     MapPointIterator map_matches() const;
 
@@ -54,6 +56,7 @@ class Frame {
     KDTree2D m_kd_tree;
 
     std::vector<const MapPoint*> m_map_matches;
+    std::unordered_set<const MapPoint*> m_matched_map_points;
 };
 
 } // namespace slam
