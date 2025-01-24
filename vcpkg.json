@@ -17,6 +17,8 @@
         "gtk",
         "ffmpeg"
       ]
-    }
+    },
+    "pybind11",
+    "yaml-cpp"
   ]
 }
