@@ -2,18 +2,23 @@
 
 namespace slam {
 
-static Eigen::Matrix3f intrinsic_from_focal_len(float focal_len, int width, int height)
+static Eigen::Matrix3f make_intrinsic_matrix(float fx, float fy, float cx, float cy)
 {
     Eigen::Matrix3f K = Eigen::Matrix3f::Identity();
-    K(0, 0) = focal_len;
-    K(1, 1) = focal_len;
-    K(0, 2) = width / 2;
-    K(1, 2) = height / 2;
+    K(0, 0) = fx;
+    K(1, 1) = fy;
+    K(0, 2) = cx;
+    K(1, 2) = cy;
     return K;
 }
 
 Camera::Camera(float focal_len, int width, int height)
-    : m_K(intrinsic_from_focal_len(focal_len, width, height)), m_width(width), m_height(height)
+    : m_K(make_intrinsic_matrix(focal_len, focal_len, width / 2, height / 2)), m_width(width), m_height(height)
+{
+}
+
+Camera::Camera(float fx, float fy, float cx, float cy, int width, int height)
+    : m_K(make_intrinsic_matrix(fx, fy, cx, cy)), m_width(width), m_height(height)
 {
 }
 

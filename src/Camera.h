@@ -8,6 +8,7 @@ namespace slam {
 class Camera {
   public:
     Camera(float focal_len, int width, int height);
+    Camera(float fx, float fy, float cx, float cy, int width, int height);
 
     const Eigen::Matrix3f& get_intrinsic_matrix() const;
 
