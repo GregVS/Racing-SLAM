@@ -14,7 +14,7 @@ find_package(yaml-cpp REQUIRED)
 
 add_subdirectory(lightglue)
 
-file(GLOB SRC_FILES src/*.cpp)
+file(GLOB SRC_FILES src/*.cpp src/features/*.cpp)
 list(REMOVE_ITEM SRC_FILES */main.cpp)
 add_executable(slam ${SRC_FILES} src/main.cpp)
 add_library(slam_lib ${SRC_FILES})

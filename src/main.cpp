@@ -5,6 +5,8 @@
 #include "Slam.h"
 #include "VideoLoader.h"
 #include "Visualization.h"
+#include "features/DeepFeatureExtractor.h"
+#include "features/OrbFeatureExtractor.h"
 
 slam::Camera load_camera(const YAML::Node& config, slam::VideoLoader& video_loader)
 {
@@ -51,11 +53,15 @@ int main(int argc, char** argv)
     slam::SlamConfig config = {
         .triangulate_points = false,
         .bundle_adjust = true,
-        .optimize_pose = false,
+        .optimize_pose = true,
         .cull_points = false,
         .essential_matrix_estimation = false,
     };
-    slam::Slam slam(setup.video_loader, setup.camera, setup.mask, config);
+    slam::Slam slam(setup.video_loader,
+                    setup.camera,
+                    setup.mask,
+                    std::make_unique<slam::features::OrbFeatureExtractor>(),
+                    config);
     slam.initialize();
 
     // Display the map matches

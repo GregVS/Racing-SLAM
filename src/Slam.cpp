@@ -1,6 +1,7 @@
 #include "Slam.h"
 
-#include "Features.h"
+#include "features/FeatureExtractor.h"
+#include "Helpers.h"
 #include "Init.h"
 #include "Optimization.h"
 #include "PoseEstimation.h"
@@ -11,8 +12,10 @@ namespace slam {
 Slam::Slam(const VideoLoader& video_loader,
            const Camera& camera,
            const cv::Mat& image_mask,
+           std::unique_ptr<features::BaseFeatureExtractor> feature_extractor,
            const SlamConfig& config)
-    : m_video_loader(video_loader), m_camera(camera), m_static_mask(image_mask), m_config(config)
+    : m_video_loader(video_loader), m_camera(camera), m_static_mask(image_mask),
+      m_feature_extractor(std::move(feature_extractor)), m_config(config)
 {
 }
 
@@ -22,7 +25,7 @@ std::optional<Frame> Slam::process_next_frame()
     if (image.empty()) {
         return std::nullopt;
     }
-    auto features = features::extract_features(image, m_static_mask);
+    auto features = m_feature_extractor->extract_features(image, m_static_mask);
     return std::make_optional<Frame>(m_frame_index++, image, features);
 }
 
@@ -30,7 +33,8 @@ void Slam::initialize()
 {
     // First first frames
     auto maybe_result = init::find_initializing_frames([this]() { return process_next_frame(); },
-                                                       m_camera);
+                                                       m_camera,
+                                                       *m_feature_extractor);
     if (!maybe_result) {
         std::cout << "Initialization failed" << std::endl;
         return;
@@ -43,7 +47,9 @@ void Slam::initialize()
               << std::endl;
 
     // Triangulate points
-    auto matches = features::match_features(ref_frame->features(), query_frame->features());
+    auto matches = m_feature_extractor->match_features(ref_frame->features(),
+                                                       query_frame->features());
+    std::cout << "Number of matches: " << matches.size() << std::endl;
     auto points = triangulation::triangulate_points(*ref_frame, *query_frame, matches, m_camera);
 
     // Add points to map
@@ -82,6 +88,7 @@ void Slam::initialize()
 
 void Slam::step()
 {
+    std::cout << "----------------------------------------" << std::endl;
     auto maybe_frame = process_next_frame();
     if (!maybe_frame) {
         std::cout << "No frame to process" << std::endl;
@@ -92,34 +99,35 @@ void Slam::step()
     auto last_key_frame = m_key_frames.back();
 
     // Initial pose estimation
-    initial_pose_estimate(*frame);
+    time_it("Initial pose estimation", [&]() { initial_pose_estimate(*frame); });
 
     // Match with map from last key frame
-    match_with_last_key_frame(*frame);
-    optimize_pose(*frame);
+    time_it("Match with last key frame", [&]() { match_with_last_key_frame(*frame); });
+    time_it("Optimize pose", [&]() { optimize_pose(*frame); });
 
     // Match with all map points
-    match_with_map(*frame);
-    optimize_pose(*frame);
+    time_it("Match with map", [&]() { match_with_map(*frame); });
+    time_it("Optimize pose", [&]() { optimize_pose(*frame); });
 
     // Create key frame if needed
-    if (frame->num_map_matches() < 0.9 * last_key_frame->num_map_matches()) {
-        std::cout << "Too few map matches, adding key frame" << std::endl;
-        init_key_frame(*frame);
-        m_key_frames.push_back(frame);
-    }
+    time_it("Create key frame", [&]() {
+        if (frame->num_map_matches() < 0.9 * last_key_frame->num_map_matches()) {
+            std::cout << "Too few map matches, adding key frame" << std::endl;
+            init_key_frame(*frame);
+            m_key_frames.push_back(frame);
+        }
+    });
 
     m_last_frame = frame;
-    std::cout << "----------------------------------------" << std::endl;
 }
 
 void Slam::initial_pose_estimate(Frame& frame)
 {
-    if (m_config.essential_matrix_estimation) {
+    if (m_config.essential_matrix_estimation || m_key_frames.size() < 2) {
         auto pose_estimate = pose::estimate_pose(
             m_last_frame->features(),
             frame.features(),
-            features::match_features(m_last_frame->features(), frame.features()),
+            m_feature_extractor->match_features(m_last_frame->features(), frame.features()),
             m_camera);
         frame.set_pose(pose_estimate.pose * m_last_frame->pose());
     } else {
@@ -130,20 +138,24 @@ void Slam::initial_pose_estimate(Frame& frame)
 void Slam::match_with_last_key_frame(Frame& frame)
 {
     auto last_frame = m_key_frames.back();
-    auto map_matches = features::match_features(frame, m_camera, m_map, [&](const MapPoint& point) {
-        return point.is_observed_by(last_frame.get());
-    });
+    auto map_matches = m_feature_extractor->match_features(
+        frame,
+        m_camera,
+        m_map,
+        [&](const MapPoint& point) { return point.is_observed_by(last_frame.get()); });
     for (const auto& match : map_matches) {
         frame.add_map_match(match);
     }
-    std::cout << "Number of recent matches: " << map_matches.size() << std::endl;
+    std::cout << "Map matches with last frame: " << map_matches.size() << std::endl;
 }
 
 void Slam::match_with_map(Frame& frame)
 {
-    auto map_matches = features::match_features(frame, m_camera, m_map, [&](const MapPoint& point) {
-        return true;
-    });
+    auto map_matches = m_feature_extractor->match_features(
+        frame,
+        m_camera,
+        m_map,
+        [&](const MapPoint& point) { return true; });
     for (const auto& match : map_matches) {
         frame.add_map_match(match);
     }
@@ -152,6 +164,9 @@ void Slam::match_with_map(Frame& frame)
 
 void Slam::optimize_pose(Frame& frame)
 {
+    if (!m_config.optimize_pose) {
+        return;
+    }
     auto config = optimization::OptimizationConfig{
         .optimize_points = false,
         .frames = {{true, &frame}},
@@ -169,8 +184,8 @@ void Slam::init_key_frame(Frame& frame)
 
     // Triangulate unmatched points
     if (m_config.triangulate_points) {
-        auto feature_matches = features::match_features(last_key_frame->features(),
-                                                        frame.features());
+        auto feature_matches = m_feature_extractor->match_features(last_key_frame->features(),
+                                                                   frame.features());
         auto unmatched = features::unmatched_features(*last_key_frame, frame, feature_matches);
         auto points = triangulation::triangulate_points(*last_key_frame,
                                                         frame,

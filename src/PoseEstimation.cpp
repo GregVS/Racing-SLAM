@@ -3,7 +3,6 @@
 #include <Eigen/Dense>
 #include <opencv2/core/eigen.hpp>
 
-#include "Features.h"
 #include "Triangulation.h"
 
 namespace slam::pose {

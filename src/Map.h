@@ -5,7 +5,7 @@
 #include <unordered_set>
 
 #include "MapPoint.h"
-#include "Features.h"
+#include "features/FeatureExtractor.h"
 
 namespace slam {
 

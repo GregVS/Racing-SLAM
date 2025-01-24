@@ -36,27 +36,30 @@ struct MapPointMatch {
     const MapPoint& point;
     size_t keypoint_index;
 };
+} // namespace slam
 
-namespace features {
+namespace slam::features {
 
-static constexpr int MAX_ORB_DISTANCE = 64;
-static constexpr int MAX_ORB_DISTANCE_TO_MAP = 64;
+class BaseFeatureExtractor {
+  public:
+    virtual ExtractedFeatures extract_features(const cv::Mat& image, const cv::Mat& mask) const = 0;
 
-ExtractedFeatures extract_features(const cv::Mat& image,
-                                   const cv::InputArray& mask = cv::noArray());
+    virtual std::vector<FeatureMatch> match_features(const ExtractedFeatures& prev_features,
+                                                     const ExtractedFeatures& features) const;
 
-std::vector<FeatureMatch> match_features(const ExtractedFeatures& prev_features,
-                                         const ExtractedFeatures& features);
+    virtual std::vector<MapPointMatch>
+    match_features(const Frame& frame,
+                   const Camera& camera,
+                   const Map& map,
+                   std::function<bool(const MapPoint&)> point_filter) const;
 
-std::vector<MapPointMatch> match_features(const Frame& frame,
-                                          const Camera& camera,
-                                          const Map& map,
-                                          std::function<bool(const MapPoint&)> point_filter);
+  protected:
+    virtual float max_distance() const = 0;
+    virtual cv::NormTypes norm_type() const = 0;
+};
 
 std::vector<FeatureMatch> unmatched_features(const Frame& frame1,
                                              const Frame& frame2,
                                              const std::vector<FeatureMatch>& matches);
 
-}; // namespace features
-
-}; // namespace slam
+} // namespace slam::features

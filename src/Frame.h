@@ -4,7 +4,7 @@
 #include <opencv2/opencv.hpp>
 #include <unordered_set>
 
-#include "Features.h"
+#include "features/FeatureExtractor.h"
 #include "KDTree.h"
 
 namespace slam {

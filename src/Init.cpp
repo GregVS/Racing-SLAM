@@ -6,7 +6,9 @@
 namespace slam::init {
 
 std::optional<Initialization>
-find_initializing_frames(std::function<std::optional<Frame>()> next_frame, const Camera& camera)
+find_initializing_frames(std::function<std::optional<Frame>()> next_frame,
+                         const Camera& camera,
+                         const features::BaseFeatureExtractor& feature_extractor)
 {
     // Get the first frame
     auto ref_frame_opt = next_frame();
@@ -34,7 +36,8 @@ find_initializing_frames(std::function<std::optional<Frame>()> next_frame, const
         }
 
         // Estimate pose
-        auto matches = features::match_features(ref_frame.features(), query_frame.features());
+        auto matches = feature_extractor.match_features(ref_frame.features(),
+                                                        query_frame.features());
         auto pose_estimate = pose::estimate_pose(ref_frame.features(),
                                                  query_frame.features(),
                                                  matches,

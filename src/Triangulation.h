@@ -4,7 +4,7 @@
 #include <vector>
 
 #include "Camera.h"
-#include "Features.h"
+#include "features/FeatureExtractor.h"
 
 namespace slam::triangulation {
 

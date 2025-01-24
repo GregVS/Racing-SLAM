@@ -21,6 +21,7 @@ class Slam {
     Slam(const VideoLoader& video_loader,
          const Camera& camera,
          const cv::Mat& image_mask,
+         std::unique_ptr<features::BaseFeatureExtractor> feature_extractor,
          const SlamConfig& config = SlamConfig());
 
     void initialize();
@@ -36,6 +37,7 @@ class Slam {
     Camera m_camera;
     cv::Mat m_static_mask; // Defines the region of interest for feature extraction
     SlamConfig m_config;
+    std::unique_ptr<features::BaseFeatureExtractor> m_feature_extractor;
 
     // State
     VideoLoader m_video_loader;

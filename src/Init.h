@@ -4,7 +4,7 @@
 #include <memory>
 #include <optional>
 
-#include "Features.h"
+#include "features/FeatureExtractor.h"
 #include "Frame.h"
 
 namespace slam::init {
@@ -16,9 +16,10 @@ struct Initialization {
 };
 
 static constexpr int MAX_REF_CHANCES = 5;
-static constexpr int MIN_TRIANGULATED_POINTS = 100;
+static constexpr int MIN_TRIANGULATED_POINTS = 50;
 
 std::optional<Initialization> find_initializing_frames(std::function<std::optional<Frame>()> next_frame,
-                                                         const Camera& camera);
+                                                         const Camera& camera,
+                                                         const features::BaseFeatureExtractor& feature_extractor);
 
 } // namespace slam::init
