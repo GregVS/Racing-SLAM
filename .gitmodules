@@ -1,0 +1,3 @@
+[submodule "lightglue"]
+	path = lightglue
+	url = git@github.com:GregVS/lightglue-cpp.git
