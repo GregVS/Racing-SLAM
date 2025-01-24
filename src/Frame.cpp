@@ -4,7 +4,7 @@ namespace slam {
 
 // Frame
 Frame::Frame(int index, const cv::Mat& image, const ExtractedFeatures& features)
-    : m_index(index), m_image(image), m_features(features)
+    : m_index(index), m_image(image), m_features(features), m_pose(Eigen::Matrix4f::Identity())
 {
     std::vector<Eigen::Vector2f> keypoints;
     for (const auto& keypoint : m_features.keypoints) {
