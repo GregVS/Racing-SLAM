@@ -111,7 +111,7 @@ void Slam::step()
 
     // Create key frame if needed
     time_it("Create key frame", [&]() {
-        if (frame->num_map_matches() < 0.9 * last_key_frame->num_map_matches()) {
+        if (frame->num_map_matches() < 0.9 * last_key_frame->num_map_matches() || frame->index() - last_key_frame->index() > 5) {
             std::cout << "Too few map matches, adding key frame" << std::endl;
             init_key_frame(*frame);
             m_key_frames.push_back(frame);
