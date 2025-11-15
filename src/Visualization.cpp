@@ -75,7 +75,7 @@ void Visualization::set_points(const std::vector<Point>& points)
 void Visualization::draw_camera_poses()
 {
     for (const auto& pose : m_poses) {
-        const float camera_size = 1.0f;
+        const float camera_size = 1.5f;
         const Eigen::Matrix4f inverse_pose = pose.inverse();
 
         glPushMatrix();
