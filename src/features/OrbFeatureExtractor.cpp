@@ -15,15 +15,13 @@ ExtractedFeatures OrbFeatureExtractor::extract_features(const cv::Mat& image, co
     cv::Mat descriptors;
 
     // Feature extraction and description
-    cv::Ptr<cv::Feature2D> extractor = cv::GFTTDetector::create(3000, 0.005, 7);
-    extractor->detect(gray_image, keypoints, mask);
+    m_detector->detect(gray_image, keypoints, mask);
 
     for (auto& keypoint : keypoints) {
         keypoint.size = 31;
     }
 
-    cv::Ptr<cv::Feature2D> detector = cv::ORB::create();
-    detector->compute(gray_image, keypoints, descriptors);
+    m_descriptor->compute(gray_image, keypoints, descriptors);
 
     return {keypoints, descriptors};
 }

@@ -18,6 +18,10 @@ class OrbFeatureExtractor : public BaseFeatureExtractor {
     {
         return cv::NORM_HAMMING;
     }
+
+  private:
+    cv::Ptr<cv::Feature2D> m_detector = cv::GFTTDetector::create(3000, 0.005, 7);
+    cv::Ptr<cv::Feature2D> m_descriptor = cv::ORB::create();
 };
 
 } // namespace slam::features
