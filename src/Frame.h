@@ -36,6 +36,7 @@ class Frame {
     std::vector<size_t> features_in_region(const Eigen::Vector2f& uv, float radius) const;
     const ExtractedFeatures& features() const;
 
+    Eigen::Vector3f camera_center() const;
     const Eigen::Matrix4f& pose() const;
     void set_pose(const Eigen::Matrix4f& pose);
 

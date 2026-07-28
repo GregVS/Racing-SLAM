@@ -34,6 +34,11 @@ const Eigen::Matrix4f& Frame::pose() const
     return m_pose;
 }
 
+Eigen::Vector3f Frame::camera_center() const
+{
+    return -m_pose.block<3, 3>(0, 0).transpose() * m_pose.block<3, 1>(0, 3);
+}
+
 void Frame::set_pose(const Eigen::Matrix4f& pose)
 {
     m_pose = pose;

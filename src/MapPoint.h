@@ -14,6 +14,7 @@ class MapPoint {
 
     const Eigen::Vector3f& position() const;
     void set_position(const Eigen::Vector3f& position);
+    Eigen::Vector3f avg_viewing_normal() const;
 
     void add_observation(const Frame* key_frame, size_t index);
     const std::unordered_map<const Frame*, size_t>& observations() const;

@@ -19,6 +19,17 @@ void MapPoint::set_position(const Eigen::Vector3f& position)
     m_position = position;
 }
 
+Eigen::Vector3f MapPoint::avg_viewing_normal() const
+{
+    Eigen::Vector3f normal = Eigen::Vector3f::Zero();
+    for (const auto& [frame, index] : m_observations) {
+        Eigen::Vector3f C = frame->camera_center();
+        Eigen::Vector3f v = (m_position - C).normalized();
+        normal += v.normalized();
+    }
+    return normal.normalized();
+}
+
 void MapPoint::add_observation(const Frame* key_frame, size_t index)
 {
     m_observations[key_frame] = index;

@@ -51,6 +51,14 @@ BaseFeatureExtractor::match_features(const Frame& frame,
             continue;
         }
 
+        // Filter points where the viewing angle is too different from its previous viewing angles
+        auto viewing_normal = point.avg_viewing_normal();
+        auto viewing_direction = (point.position() - frame.camera_center()).normalized();
+        auto dot = viewing_normal.dot(viewing_direction);
+        if (dot < 0.5) {
+            continue;
+        }
+
         // Compare to features in the region
         auto feature_indices = frame.features_in_region(image_point, 20);
 
