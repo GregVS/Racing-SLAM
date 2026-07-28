@@ -1,0 +1,6 @@
+video: /home/gregory/data/kitti/dataset/sequences/04/image_0/%06d.png
+fx: 707.0912
+fy: 707.0912
+cx: 601.8873
+cy: 183.1104
+trajectory_out: kitti04_out.txt

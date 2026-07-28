@@ -3,6 +3,7 @@
 
 #include "Camera.h"
 #include "Slam.h"
+#include "Trajectory.h"
 #include "VideoLoader.h"
 #include "Visualization.h"
 #include "features/DeepFeatureExtractor.h"
@@ -49,6 +50,11 @@ int main(int argc, char** argv)
     auto yaml_file = argv[1];
     YAML::Node yaml = YAML::LoadFile(yaml_file);
 
+    // Fixed seed for reproducibility
+    int seed = yaml["seed"] ? yaml["seed"].as<int>() : 0;
+    cv::setRNGSeed(seed);
+    std::cout << "Random seed: " << seed << std::endl;
+
     Setup setup = load_setup(yaml);
 
     slam::SlamConfig config = {
@@ -73,6 +79,14 @@ int main(int argc, char** argv)
         }
     } else {
         slam.initialize();
+    }
+
+    // Headless mode
+    if (yaml["trajectory_out"]) {
+        std::string trajectory_out = yaml["trajectory_out"].as<std::string>();
+        while (slam.step());
+        std::cout << "Reprojection error: " << slam.reprojection_error() << std::endl;
+        return slam::trajectory::write_kitti(trajectory_out, slam.trajectory()) ? 0 : 1;
     }
 
     std::atomic<bool> pause = false;
