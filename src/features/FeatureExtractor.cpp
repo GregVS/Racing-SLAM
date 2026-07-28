@@ -105,7 +105,8 @@ std::vector<FeatureMatch> unmatched_features(const Frame& frame1,
 {
     std::vector<FeatureMatch> unmatched;
     for (const auto& match : matches) {
-        if (!frame1.is_matched(match.query_index) && !frame2.is_matched(match.train_index)) {
+        // train_index = frame1, query_index = frame2
+        if (!frame1.is_matched(match.train_index) && !frame2.is_matched(match.query_index)) {
             unmatched.push_back(match);
         }
     }
