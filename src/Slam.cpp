@@ -189,8 +189,9 @@ void Slam::optimize_pose(Frame& frame)
     if (!m_config.optimize_pose) {
         return;
     }
+    // Motion-only BA
     auto config = optimization::OptimizationConfig{
-        .optimize_points = true,
+        .optimize_points = false,
         .frames = {{true, &frame}},
     };
     optimization::optimize(config, m_camera, m_map);
