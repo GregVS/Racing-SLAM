@@ -89,15 +89,18 @@ void Slam::initialize()
     m_key_frames.push_back(ref_frame);
     m_key_frames.push_back(query_frame);
     m_last_frame = query_frame;
+
+    record_pose(*ref_frame);
+    record_pose(*query_frame);
 }
 
-void Slam::step()
+bool Slam::step()
 {
     std::cout << "----------------------------------------" << std::endl;
     auto maybe_frame = process_next_frame();
     if (!maybe_frame) {
         std::cout << "No frame to process" << std::endl;
-        return;
+        return false;
     }
 
     auto frame = std::make_shared<Frame>(std::move(*maybe_frame));
@@ -124,6 +127,17 @@ void Slam::step()
     });
 
     m_last_frame = frame;
+    record_pose(*frame);
+    return true;
+}
+
+void Slam::record_pose(const Frame& frame)
+{
+    // Frames dropped during initialization keep the previous pose so that the trajectory stays
+    // indexed by frame index
+    auto fill = m_trajectory.empty() ? Eigen::Matrix4f::Identity() : m_trajectory.back();
+    m_trajectory.resize(frame.index() + 1, fill);
+    m_trajectory[frame.index()] = frame.pose();
 }
 
 void Slam::initial_pose_estimate(Frame& frame)
@@ -281,6 +295,18 @@ std::vector<Eigen::Matrix4f> Slam::poses() const
         poses.push_back(frame->pose());
     }
     return poses;
+}
+
+std::vector<Eigen::Matrix4f> Slam::trajectory() const
+{
+    // Key frames are refined by bundle adjustment after they were recorded
+    auto trajectory = m_trajectory;
+    for (const auto& frame : m_key_frames) {
+        if (frame->index() < trajectory.size()) {
+            trajectory[frame->index()] = frame->pose();
+        }
+    }
+    return trajectory;
 }
 
 void Slam::save_state(const std::string& filename) const

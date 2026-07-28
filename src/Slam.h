@@ -25,12 +25,18 @@ class Slam {
          const SlamConfig& config = SlamConfig());
 
     void initialize();
-    void step();
+
+    /** Processes the next frame. Returns false once the video is exhausted. */
+    bool step();
 
     float reprojection_error() const;
     const Map& map() const;
     const Frame& frame() const;
     std::vector<Eigen::Matrix4f> poses() const;
+
+    /** One pose per frame index, including non key frames. Key frames report their current,
+     * bundle adjusted pose */
+    std::vector<Eigen::Matrix4f> trajectory() const;
 
     void save_state(const std::string& filename = "slam_state.json") const;
     bool load_state(const std::string& filename);
@@ -48,9 +54,11 @@ class Slam {
     Map m_map;
     std::vector<std::shared_ptr<Frame>> m_key_frames;
     std::shared_ptr<Frame> m_last_frame;
+    std::vector<Eigen::Matrix4f> m_trajectory;
 
     // Private methods
     std::optional<Frame> process_next_frame();
+    void record_pose(const Frame& frame);
     void cull_points();
     void initial_pose_estimate(Frame& frame);
     void match_with_last_key_frame(Frame& frame);
