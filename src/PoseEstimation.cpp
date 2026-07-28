@@ -73,9 +73,9 @@ PoseEstimate estimate_pose(const ExtractedFeatures& prev_features,
     cv::Mat E = cv::findEssentialMat(matched_points_from,
                                      matched_points_to,
                                      cv_utils::intrinsic_mat_cv(camera),
-                                     cv::RANSAC,
-                                     0.999,
-                                     0.4,
+                                     cv::USAC_ACCURATE,
+                                     0.99,
+                                     1.0,
                                      essential_inliers);
 
     PoseEstimate pose_estimate;
