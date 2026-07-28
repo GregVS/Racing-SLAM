@@ -14,6 +14,9 @@
 
 namespace slam {
 
+// Number of most recent key frames whose poses local bundle adjustment is allowed to move
+static const size_t BA_WINDOW = 10;
+
 Slam::Slam(const VideoLoader& video_loader,
            const Camera& camera,
            const cv::Mat& image_mask,
@@ -219,9 +222,11 @@ void Slam::init_key_frame(Frame& frame)
 
     // Bundle adjustment
     if (m_config.bundle_adjust) {
+        size_t first_optimized = m_key_frames.size() > BA_WINDOW ? m_key_frames.size() - BA_WINDOW
+                                                                 : 2;
         std::vector<optimization::FrameConfig> frame_configs;
-        for (const auto& frame : m_key_frames) {
-            frame_configs.push_back({false, frame.get()});
+        for (size_t i = 0; i < m_key_frames.size(); i++) {
+            frame_configs.push_back({i >= first_optimized, m_key_frames[i].get()});
         }
         frame_configs.push_back({true, &frame});
         auto config = optimization::OptimizationConfig{
