@@ -28,10 +28,15 @@ void Map::create_point(const Eigen::Vector3f& position, Frame& frame1, Frame& fr
     frame1.add_map_match(MapPointMatch{*point, match.train_index});
     frame2.add_map_match(MapPointMatch{*point, match.query_index});
 
-    // Set color
+    // Support for grayscale images
     auto uv = frame1.keypoint(match.train_index).pt;
-    auto bgr_color = frame1.image().at<cv::Vec3b>(uv.y, uv.x);
-    point->set_color(cv::Vec3b(bgr_color[2], bgr_color[1], bgr_color[0]));
+    if (frame1.image().channels() == 1) {
+        auto gray = frame1.image().at<uchar>(uv.y, uv.x);
+        point->set_color(cv::Vec3b(gray, gray, gray));
+    } else {
+        auto bgr_color = frame1.image().at<cv::Vec3b>(uv.y, uv.x);
+        point->set_color(cv::Vec3b(bgr_color[2], bgr_color[1], bgr_color[0]));
+    }
 
     // Add to map
     m_points.insert(std::move(point));
