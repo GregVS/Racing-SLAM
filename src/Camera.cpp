@@ -25,6 +25,9 @@ Camera::Camera(float fx, float fy, float cx, float cy, int width, int height)
 Eigen::Vector2f Camera::project(const Eigen::Matrix4f& pose, const Eigen::Vector3f& point) const
 {
     Eigen::Vector3f uv = m_K * pose.block<3, 4>(0, 0) * point.homogeneous();
+    if (uv.z() < 0) {
+        return Eigen::Vector2f::Ones() * -1; // Return invalid point
+    }
     return uv.hnormalized();
 }
 

@@ -32,6 +32,9 @@ class Slam {
     const Frame& frame() const;
     std::vector<Eigen::Matrix4f> poses() const;
 
+    void save_state(const std::string& filename = "slam_state.json") const;
+    bool load_state(const std::string& filename);
+
   private:
     // Configuration
     Camera m_camera;

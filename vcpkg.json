@@ -19,6 +19,7 @@
       ]
     },
     "pybind11",
-    "yaml-cpp"
+    "yaml-cpp",
+    "nlohmann-json"
   ]
 }

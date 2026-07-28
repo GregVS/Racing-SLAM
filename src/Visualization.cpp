@@ -72,6 +72,16 @@ void Visualization::set_points(const std::vector<Point>& points)
     m_points = points;
 }
 
+void Visualization::set_save_callback(std::function<void()> callback)
+{
+    m_save_callback = callback;
+}
+
+void Visualization::set_pause_callback(std::function<void()> callback)
+{
+    m_pause_callback = callback;
+}
+
 void Visualization::draw_camera_poses()
 {
     for (const auto& pose : m_poses) {
@@ -134,6 +144,18 @@ void Visualization::run()
     pangolin::RegisterKeyPressCallback(pangolin::PANGO_KEY_TAB, [&]() {
         std::lock_guard<std::mutex> lock(m_key_pressed_mutex);
         m_key_pressed_cv.notify_all();
+    });
+
+    pangolin::RegisterKeyPressCallback('s', [this]() {
+        if (m_save_callback) {
+            m_save_callback();
+        }
+    });
+
+    pangolin::RegisterKeyPressCallback('p', [this]() {
+        if (m_pause_callback) {
+            m_pause_callback();
+        }
     });
 
     while (!pangolin::ShouldQuit()) {

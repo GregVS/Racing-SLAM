@@ -13,6 +13,14 @@ cv::Mat VideoLoader::get_next_frame()
     return frame;
 }
 
+cv::Mat VideoLoader::get_frame(int frame_index)
+{
+    m_video_capture.set(cv::CAP_PROP_POS_FRAMES, frame_index);
+    cv::Mat frame;
+    m_video_capture >> frame;
+    return frame;
+}
+
 std::vector<cv::Mat> VideoLoader::get_all_frames()
 {
     std::vector<cv::Mat> frames;

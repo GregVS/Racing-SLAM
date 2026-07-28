@@ -6,6 +6,7 @@
 #include <mutex>
 #include <memory>
 #include <condition_variable>
+#include <functional>
 
 #include "Frame.h"
 
@@ -30,7 +31,8 @@ public:
     void run_threaded();
     void wait_for_keypress();
     bool has_quit() const;
-    
+    void set_save_callback(std::function<void()> callback);
+    void set_pause_callback(std::function<void()> callback);
 private:
     void draw_camera_poses();
     void draw_points();
@@ -55,6 +57,9 @@ private:
 
     std::mutex m_key_pressed_mutex;
     std::condition_variable m_key_pressed_cv;
+
+    std::function<void()> m_save_callback;
+    std::function<void()> m_pause_callback;
 };
 
 } // namespace slam

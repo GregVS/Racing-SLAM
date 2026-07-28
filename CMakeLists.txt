@@ -11,6 +11,7 @@ find_package(Ceres REQUIRED)
 find_package(Pangolin REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(yaml-cpp REQUIRED)
+find_package(nlohmann_json REQUIRED)
 
 add_subdirectory(lightglue)
 
