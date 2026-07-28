@@ -41,7 +41,7 @@ BaseFeatureExtractor::match_features(const Frame& frame,
     }
 
     for (const auto& point : map) {
-        if (!point_filter(point)) {
+        if (!point_filter(point) || frame.is_matched(point)) {
             continue;
         }
 
@@ -67,6 +67,11 @@ BaseFeatureExtractor::match_features(const Frame& frame,
         float best_match_distance = max_distance();
 
         for (const auto& index : feature_indices) {
+            // Keypoints claimed by an earlier pass are not available to win
+            if (frame.is_matched(index)) {
+                continue;
+            }
+
             const auto descriptor = frame.descriptor(index);
 
             // Ensure it is within the distance threshold
@@ -90,8 +95,7 @@ BaseFeatureExtractor::match_features(const Frame& frame,
 
     std::vector<MapPointMatch> final_matches;
     for (const auto& proposed_match : proposed_matches) {
-        if (!frame.is_matched(proposed_match.keypoint_index) &&
-            !frame.is_matched(*proposed_match.point) && proposed_match.point != nullptr) {
+        if (proposed_match.point != nullptr) {
             auto match = MapPointMatch{*proposed_match.point, proposed_match.keypoint_index};
             final_matches.push_back(match);
         }
