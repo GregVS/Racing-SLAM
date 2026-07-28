@@ -17,6 +17,11 @@ namespace slam {
 // Number of most recent key frames whose poses local bundle adjustment is allowed to move
 static const size_t BA_WINDOW = 10;
 
+// Key frame spacing
+static const size_t MIN_KEY_FRAME_GAP = 5;
+static const size_t MAX_KEY_FRAME_GAP = 20;
+static const size_t MIN_TRACKED_POINTS = 50;
+
 Slam::Slam(const VideoLoader& video_loader,
            const Camera& camera,
            const cv::Mat& image_mask,
@@ -122,8 +127,9 @@ bool Slam::step()
 
     // Create key frame if needed
     time_it("Create key frame", [&]() {
-        if (frame->num_map_matches() < 0.9 * last_key_frame->num_map_matches() || frame->index() - last_key_frame->index() > 5) {
-            std::cout << "Too few map matches, adding key frame" << std::endl;
+        if (needs_key_frame(*frame, *last_key_frame)) {
+            std::cout << "Adding key frame after " << frame->index() - last_key_frame->index()
+                      << " frames" << std::endl;
             init_key_frame(*frame);
             m_key_frames.push_back(frame);
         }
@@ -132,6 +138,20 @@ bool Slam::step()
     m_last_frame = frame;
     record_pose(*frame);
     return true;
+}
+
+bool Slam::needs_key_frame(const Frame& frame, const Frame& last_key_frame) const
+{
+    if (frame.num_map_matches() < MIN_TRACKED_POINTS) {
+        return true;
+    }
+
+    size_t gap = frame.index() - last_key_frame.index();
+    if (gap < MIN_KEY_FRAME_GAP) {
+        return false;
+    }
+
+    return gap >= MAX_KEY_FRAME_GAP || frame.num_map_matches() < 0.9 * last_key_frame.num_map_matches();
 }
 
 void Slam::record_pose(const Frame& frame)

@@ -58,6 +58,7 @@ class Slam {
 
     // Private methods
     std::optional<Frame> process_next_frame();
+    bool needs_key_frame(const Frame& frame, const Frame& last_key_frame) const;
     void record_pose(const Frame& frame);
     void cull_points();
     void initial_pose_estimate(Frame& frame);
