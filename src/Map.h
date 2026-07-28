@@ -2,7 +2,7 @@
 
 #include <Eigen/Dense>
 #include <memory>
-#include <unordered_set>
+#include <vector>
 
 #include "MapPoint.h"
 #include "features/FeatureExtractor.h"
@@ -26,25 +26,25 @@ class Map {
     // Const iterator for map points
     class const_iterator {
       public:
-        const_iterator(std::unordered_set<std::unique_ptr<MapPoint>>::const_iterator it);
+        const_iterator(std::vector<std::unique_ptr<MapPoint>>::const_iterator it);
         const MapPoint& operator*() const;
         const_iterator& operator++();
         bool operator!=(const const_iterator& other) const;
 
       private:
-        std::unordered_set<std::unique_ptr<MapPoint>>::const_iterator m_it;
+        std::vector<std::unique_ptr<MapPoint>>::const_iterator m_it;
     };
 
     // Mutable iterator for map points
     class iterator {
       public:
-        iterator(std::unordered_set<std::unique_ptr<MapPoint>>::iterator it);
+        iterator(std::vector<std::unique_ptr<MapPoint>>::iterator it);
         MapPoint& operator*() const;
         iterator& operator++();
         bool operator!=(const iterator& other) const;
 
       private:
-        std::unordered_set<std::unique_ptr<MapPoint>>::iterator m_it;
+        std::vector<std::unique_ptr<MapPoint>>::iterator m_it;
     };
 
     iterator begin();
@@ -54,7 +54,7 @@ class Map {
     const_iterator end() const;
 
   private:
-    std::unordered_set<std::unique_ptr<MapPoint>> m_points;
+    std::vector<std::unique_ptr<MapPoint>> m_points;
 };
 
 } // namespace slam

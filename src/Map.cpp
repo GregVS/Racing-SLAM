@@ -10,12 +10,12 @@ Map::Map()
 
 void Map::add_point(const Eigen::Vector3f& position)
 {
-    m_points.insert(std::make_unique<MapPoint>(position));
+    m_points.push_back(std::make_unique<MapPoint>(position));
 }
 
 void Map::add_point(std::unique_ptr<MapPoint>&& point)
 {
-    m_points.insert(std::move(point));
+    m_points.push_back(std::move(point));
 }
 
 void Map::create_point(const Eigen::Vector3f& position, Frame& frame1, Frame& frame2, FeatureMatch& match)
@@ -39,17 +39,17 @@ void Map::create_point(const Eigen::Vector3f& position, Frame& frame1, Frame& fr
     }
 
     // Add to map
-    m_points.insert(std::move(point));
+    m_points.push_back(std::move(point));
 }
 
 void Map::remove_point(MapPoint* point)
 {
-    for (const auto& map_point : m_points) {
-        if (map_point.get() == point) {
-            for (const auto& [frame, index] : map_point->observations()) {
-                const_cast<Frame*>(frame)->remove_map_match({*map_point, index});
+    for (auto it = m_points.begin(); it != m_points.end(); ++it) {
+        if (it->get() == point) {
+            for (const auto& [frame, index] : (*it)->observations()) {
+                const_cast<Frame*>(frame)->remove_map_match({**it, index});
             }
-            m_points.erase(map_point);
+            m_points.erase(it);
             break;
         }
     }
@@ -73,7 +73,7 @@ Map::const_iterator Map::end() const
 }
 
 Map::const_iterator::const_iterator(
-    std::unordered_set<std::unique_ptr<MapPoint>>::const_iterator it)
+    std::vector<std::unique_ptr<MapPoint>>::const_iterator it)
     : m_it(it)
 {
 }
@@ -105,7 +105,7 @@ Map::iterator Map::end()
     return iterator(m_points.end());
 }
 
-Map::iterator::iterator(std::unordered_set<std::unique_ptr<MapPoint>>::iterator it) : m_it(it)
+Map::iterator::iterator(std::vector<std::unique_ptr<MapPoint>>::iterator it) : m_it(it)
 {
 }
 
