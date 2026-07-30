@@ -1,19 +1,18 @@
 #pragma once
 
-#include <pangolin/pangolin.h>
 #include <Eigen/Core>
-#include <vector>
-#include <mutex>
-#include <memory>
 #include <condition_variable>
 #include <functional>
-
-#include "Frame.h"
+#include <memory>
+#include <mutex>
+#include <opencv2/opencv.hpp>
+#include <pangolin/pangolin.h>
+#include <vector>
 
 namespace slam {
 
 class Visualization {
-public:
+  public:
     struct Point {
         Eigen::Vector3f position;
         cv::Vec3b color;
@@ -31,13 +30,13 @@ public:
     void run_threaded();
     void wait_for_keypress();
     bool has_quit() const;
-    void set_save_callback(std::function<void()> callback);
     void set_pause_callback(std::function<void()> callback);
-private:
+
+  private:
     void draw_camera_poses();
     void draw_points();
     void draw_image();
-    
+
     // Pangolin
     std::string m_window_name;
     pangolin::OpenGlRenderState* m_camera_state = nullptr;
@@ -58,7 +57,6 @@ private:
     std::mutex m_key_pressed_mutex;
     std::condition_variable m_key_pressed_cv;
 
-    std::function<void()> m_save_callback;
     std::function<void()> m_pause_callback;
 };
 

@@ -6,9 +6,7 @@
 
 namespace slam {
 
-Visualization::Visualization(const std::string& window_name) : m_window_name(window_name)
-{
-}
+Visualization::Visualization(const std::string& window_name) : m_window_name(window_name) {}
 
 Visualization::~Visualization()
 {
@@ -72,11 +70,6 @@ void Visualization::set_points(const std::vector<Point>& points)
     m_points = points;
 }
 
-void Visualization::set_save_callback(std::function<void()> callback)
-{
-    m_save_callback = callback;
-}
-
 void Visualization::set_pause_callback(std::function<void()> callback)
 {
     m_pause_callback = callback;
@@ -119,13 +112,8 @@ void Visualization::draw_image()
     if (!m_image.empty()) {
         if (!m_image_texture) {
             glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-            m_image_texture = std::make_unique<pangolin::GlTexture>(m_image.cols,
-                                                                    m_image.rows,
-                                                                    GL_RGB,
-                                                                    true,
-                                                                    0,
-                                                                    GL_RGB,
-                                                                    GL_UNSIGNED_BYTE);
+            m_image_texture = std::make_unique<pangolin::GlTexture>(
+                m_image.cols, m_image.rows, GL_RGB, true, 0, GL_RGB, GL_UNSIGNED_BYTE);
             m_image_texture->Upload(m_image.data, GL_RGB, GL_UNSIGNED_BYTE);
         }
 
@@ -144,12 +132,6 @@ void Visualization::run()
     pangolin::RegisterKeyPressCallback(pangolin::PANGO_KEY_TAB, [&]() {
         std::lock_guard<std::mutex> lock(m_key_pressed_mutex);
         m_key_pressed_cv.notify_all();
-    });
-
-    pangolin::RegisterKeyPressCallback('s', [this]() {
-        if (m_save_callback) {
-            m_save_callback();
-        }
     });
 
     pangolin::RegisterKeyPressCallback('p', [this]() {

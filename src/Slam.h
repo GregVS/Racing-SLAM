@@ -38,9 +38,6 @@ class Slam {
      * bundle adjusted pose */
     std::vector<Eigen::Matrix4f> trajectory() const;
 
-    void save_state(const std::string& filename = "slam_state.json") const;
-    bool load_state(const std::string& filename);
-
   private:
     // Configuration
     Camera m_camera;
