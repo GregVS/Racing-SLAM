@@ -1,0 +1,20 @@
+BasedOnStyle: LLVM
+IndentWidth: 4
+UseTab: Never
+ColumnLimit: 100
+AccessModifierOffset: -2
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: true
+AlignAfterOpenBracket: Align
+BinPackArguments: false
+BinPackParameters: false
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+ConstructorInitializerIndentWidth: 4
+PackConstructorInitializers: BinPack
+PointerAlignment: Left
+NamespaceIndentation: None
+FixNamespaceComments: true
+IndentCaseLabels: false
+SortIncludes: CaseSensitive
