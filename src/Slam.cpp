@@ -1,5 +1,6 @@
 #include "Slam.h"
 
+#include <unordered_set>
 #include <vector>
 
 #include "Helpers.h"
@@ -232,13 +233,35 @@ void Slam::init_key_frame(Frame& frame)
         std::cout << "Number of triangulated points: " << points.size() << std::endl;
     }
 
-    // Bundle adjustment
+    // Local bundle adjustment (covisbility graph)
     if (m_config.bundle_adjust) {
         size_t first_optimized =
             m_key_frames.size() > BA_WINDOW ? m_key_frames.size() - BA_WINDOW : 2;
+        std::unordered_set<const Frame*> window{&frame};
+        for (size_t i = first_optimized; i < m_key_frames.size(); i++) {
+            window.insert(m_key_frames[i].get());
+        }
+
+        // Add any frames that share map point observations with the window
+        std::unordered_set<const Frame*> anchors;
+        for (const Frame* window_frame : window) {
+            for (const auto& match : window_frame->map_matches()) {
+                for (const auto& [observer, _] : match.point.observations()) {
+                    if (window.find(observer) == window.end()) {
+                        anchors.insert(observer);
+                    }
+                }
+            }
+        }
+
+        // Build optimization config
         std::vector<optimization::FrameConfig> frame_configs;
-        for (size_t i = 0; i < m_key_frames.size(); i++) {
-            frame_configs.push_back({i >= first_optimized, m_key_frames[i].get()});
+        for (const auto& key_frame : m_key_frames) {
+            if (window.find(key_frame.get()) != window.end()) {
+                frame_configs.push_back({true, key_frame.get()});
+            } else if (anchors.find(key_frame.get()) != anchors.end()) {
+                frame_configs.push_back({false, key_frame.get()});
+            }
         }
         frame_configs.push_back({true, &frame});
         auto config = optimization::OptimizationConfig{
