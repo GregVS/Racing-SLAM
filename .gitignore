@@ -1,5 +1,6 @@
 build/
 runs/
+experiments/
 .cache/
 .venv/
 __pycache__/
