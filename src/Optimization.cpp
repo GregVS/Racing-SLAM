@@ -3,6 +3,7 @@
 #include <ceres/ceres.h>
 #include <ceres/rotation.h>
 #include <opencv2/opencv.hpp>
+#include <thread>
 
 #include "Camera.h"
 #include "Frame.h"
@@ -151,6 +152,7 @@ void optimize(const OptimizationConfig& config, const Camera& camera, Map& map)
     ceres::Solver::Options options;
     options.linear_solver_type = ceres::SPARSE_SCHUR;
     options.max_num_iterations = 10;
+    options.num_threads = std::thread::hardware_concurrency();
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
     std::cout << summary.BriefReport() << std::endl;
