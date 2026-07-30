@@ -17,15 +17,15 @@ def read_positions(path):
     return np.loadtxt(path).reshape(-1, 3, 4)[:, :, 3]
 
 
-def umeyama(source, target):
-    source_mean, target_mean = source.mean(0), target.mean(0)
-    a, b = source - source_mean, target - target_mean
-    u, s, vt = np.linalg.svd(b.T @ a / len(a))
+def align_start(source, target):
+    """Rotation and scale about the start point taking source onto target; same convention
+    as track_eval.py."""
+    u, s, vt = np.linalg.svd(target.T @ source / len(source))
     d = np.eye(3)
     d[2, 2] = np.sign(np.linalg.det(u @ vt))
     rotation = u @ d @ vt
-    scale = float(np.trace(np.diag(s) @ d) / (a**2).sum() * len(a))
-    return scale, rotation, target_mean - scale * rotation @ source_mean
+    scale = float(np.trace(np.diag(s) @ d) / (source**2).sum() * len(source))
+    return scale, rotation
 
 
 def main():
@@ -43,8 +43,12 @@ def main():
     n = min(len(gt), len(est))
     gt, est = gt[:n], est[:n]
 
-    scale, rotation, translation = umeyama(est, gt)
-    aligned = (scale * rotation @ est.T).T + translation
+    # Anchored to the start point: no free translation, rotation and scale fitted about the
+    # start since there is no defined initial heading
+    gt = gt - gt[0]
+    est = est - est[0]
+    scale, rotation = align_start(est, gt)
+    aligned = (scale * rotation @ est.T).T
     error = np.linalg.norm(aligned - gt, axis=1)
     distance = np.concatenate(
         [[0], np.cumsum(np.linalg.norm(np.diff(gt, axis=0), axis=1))]
