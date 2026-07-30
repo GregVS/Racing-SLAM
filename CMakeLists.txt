@@ -17,6 +17,10 @@ add_subdirectory(lightglue)
 file(GLOB SRC_FILES src/*.cpp src/app/*.cpp src/features/*.cpp)
 list(REMOVE_ITEM SRC_FILES */main.cpp)
 add_executable(slam ${SRC_FILES} src/main.cpp)
+
+target_link_options(slam PRIVATE
+    "LINKER:--undefined=avpriv_adts_header_parse"
+    "LINKER:--undefined=av_adts_header_parse")
 add_library(slam_lib ${SRC_FILES})
 target_link_libraries(slam_lib Eigen3::Eigen Ceres::ceres ${OpenCV_LIBS} ${Pangolin_LIBRARIES} lightglue yaml-cpp::yaml-cpp)
 target_link_libraries(slam Eigen3::Eigen Ceres::ceres ${OpenCV_LIBS} ${Pangolin_LIBRARIES} lightglue yaml-cpp::yaml-cpp)
