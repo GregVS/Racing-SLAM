@@ -4,9 +4,7 @@
 namespace slam {
 
 // Map
-Map::Map()
-{
-}
+Map::Map() {}
 
 void Map::add_point(const Eigen::Vector3f& position)
 {
@@ -18,9 +16,13 @@ void Map::add_point(std::unique_ptr<MapPoint>&& point)
     m_points.push_back(std::move(point));
 }
 
-void Map::create_point(const Eigen::Vector3f& position, Frame& frame1, Frame& frame2, FeatureMatch& match)
+MapPoint& Map::create_point(const Eigen::Vector3f& position,
+                            Frame& frame1,
+                            Frame& frame2,
+                            FeatureMatch& match)
 {
     auto point = std::make_unique<MapPoint>(position);
+    auto* created = point.get();
 
     // Add associations
     point->add_observation(&frame1, match.train_index);
@@ -40,6 +42,28 @@ void Map::create_point(const Eigen::Vector3f& position, Frame& frame1, Frame& fr
 
     // Add to map
     m_points.push_back(std::move(point));
+    return *created;
+}
+
+MapPoint& Map::create_point(const Eigen::Vector3f& position, Frame& frame, size_t keypoint_index)
+{
+    auto point = std::make_unique<MapPoint>(position);
+    auto* created = point.get();
+
+    created->add_observation(&frame, keypoint_index);
+
+    auto uv = frame.keypoint(keypoint_index).pt;
+    if (frame.image().channels() == 1) {
+        auto gray = frame.image().at<uchar>(uv.y, uv.x);
+        created->set_color(cv::Vec3b(gray, gray, gray));
+    } else {
+        auto bgr_color = frame.image().at<cv::Vec3b>(uv.y, uv.x);
+        created->set_color(cv::Vec3b(bgr_color[2], bgr_color[1], bgr_color[0]));
+    }
+
+    m_points.push_back(std::move(point));
+    frame.add_map_match(MapPointMatch{*created, keypoint_index});
+    return *created;
 }
 
 void Map::remove_point(MapPoint* point)
@@ -72,8 +96,7 @@ Map::const_iterator Map::end() const
     return const_iterator(m_points.end());
 }
 
-Map::const_iterator::const_iterator(
-    std::vector<std::unique_ptr<MapPoint>>::const_iterator it)
+Map::const_iterator::const_iterator(std::vector<std::unique_ptr<MapPoint>>::const_iterator it)
     : m_it(it)
 {
 }
@@ -105,9 +128,7 @@ Map::iterator Map::end()
     return iterator(m_points.end());
 }
 
-Map::iterator::iterator(std::vector<std::unique_ptr<MapPoint>>::iterator it) : m_it(it)
-{
-}
+Map::iterator::iterator(std::vector<std::unique_ptr<MapPoint>>::iterator it) : m_it(it) {}
 
 MapPoint& Map::iterator::operator*() const
 {

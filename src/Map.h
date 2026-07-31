@@ -17,7 +17,10 @@ class Map {
 
     void add_point(std::unique_ptr<MapPoint>&& point);
 
-    void create_point(const Eigen::Vector3f& position, Frame& frame1, Frame& frame2, FeatureMatch& match);
+    MapPoint& create_point(const Eigen::Vector3f& position, Frame& frame1, Frame& frame2, FeatureMatch& match);
+
+    /** Creates a point seen so far by one frame only */
+    MapPoint& create_point(const Eigen::Vector3f& position, Frame& frame, size_t keypoint_index);
 
     void remove_point(MapPoint* point);
 

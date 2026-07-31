@@ -8,6 +8,9 @@
 
 namespace slam::triangulation {
 
+// Minimum angle between the two viewing rays, as a cosine
+static const float MIN_PARALLAX_COSINE = 0.9999f;
+
 struct TriangulatedPoint {
     Eigen::Vector3f position;
     int match_index;
@@ -22,7 +25,9 @@ std::vector<TriangulatedPoint> triangulate_points(const std::vector<Eigen::Vecto
                                                   const std::vector<Eigen::Vector2f>& points2,
                                                   const Eigen::Matrix4f& pose1,
                                                   const Eigen::Matrix4f& pose2,
-                                                  const Camera& camera);
+                                                  const Camera& camera,
+                                                  float min_parallax_cosine = MIN_PARALLAX_COSINE,
+                                                  float max_reprojection_error = 2.0f);
 
 std::vector<TriangulatedPoint> triangulate_points(const Frame& frame1,
                                                   const Frame& frame2,

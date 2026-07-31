@@ -38,8 +38,15 @@ std::vector<TriangulatedPoint> triangulate_points(const std::vector<Eigen::Vecto
                                                   const std::vector<Eigen::Vector2f>& points2,
                                                   const Eigen::Matrix4f& pose1,
                                                   const Eigen::Matrix4f& pose2,
-                                                  const Camera& camera)
+                                                  const Camera& camera,
+                                                  float min_parallax_cosine,
+                                                  float max_reprojection_error)
 {
+    // OpenCV throws rather than returning empty when handed no points
+    if (points1.empty() || points2.empty()) {
+        return {};
+    }
+
     // Convert the projection matrices to OpenCV format
     cv::Mat projection1_cv = cv_utils::projection_mat_cv(camera, pose1);
     cv::Mat projection2_cv = cv_utils::projection_mat_cv(camera, pose2);
@@ -76,7 +83,7 @@ std::vector<TriangulatedPoint> triangulate_points(const std::vector<Eigen::Vecto
         auto point_to_cam1 = pose1.inverse().block<3, 1>(0, 3) - point;
         auto point_to_cam2 = pose2.inverse().block<3, 1>(0, 3) - point;
         auto similarity = point_to_cam1.normalized().dot(point_to_cam2.normalized());
-        if (similarity > 0.9999) {
+        if (similarity > min_parallax_cosine) {
             continue;
         }
 
@@ -87,7 +94,8 @@ std::vector<TriangulatedPoint> triangulate_points(const std::vector<Eigen::Vecto
         // Filter points with poor reprojection error
         auto reprojection_error1 = (image1_point - points1[i]).norm();
         auto reprojection_error2 = (image2_point - points2[i]).norm();
-        if (reprojection_error1 > 2 || reprojection_error2 > 2) {
+        if (reprojection_error1 > max_reprojection_error ||
+            reprojection_error2 > max_reprojection_error) {
             continue;
         }
 
