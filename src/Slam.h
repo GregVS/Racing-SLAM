@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <unordered_map>
 
 #include "Camera.h"
 #include "Map.h"
@@ -53,12 +54,26 @@ class Slam {
     std::shared_ptr<Frame> m_last_frame;
     std::vector<Eigen::Matrix4f> m_trajectory;
 
+    /** A feature followed across frames by optical flow, keyed by its keypoint index in the
+     * latest frame */
+    struct FeatureTrack {
+        const Frame* anchor_key_frame = nullptr;
+        Eigen::Vector2f anchor_pixel;
+        const Frame* mid_key_frame = nullptr;
+        Eigen::Vector2f mid_pixel;
+    };
+    std::unordered_map<size_t, FeatureTrack> m_tracks;
+
     // Private methods
-    std::optional<Frame> process_next_frame();
+    std::pair<ExtractedFeatures, std::vector<FeatureMatch>> track_features(const cv::Mat& image);
     bool needs_key_frame(const Frame& frame, const Frame& last_key_frame) const;
     void record_pose(const Frame& frame);
     void cull_points();
-    void initial_pose_estimate(Frame& frame);
+    std::vector<FeatureMatch> initial_pose_estimate(Frame& frame,
+                                                    const std::vector<FeatureMatch>& matches);
+    void update_tracks(const std::vector<FeatureMatch>& matches);
+    void track_from_last_frame(Frame& frame, const std::vector<FeatureMatch>& matches);
+    void triangulate_tracks(Frame& frame);
     void match_with_last_key_frame(Frame& frame);
     void optimize_pose(Frame& frame);
     void match_with_map(Frame& frame);
