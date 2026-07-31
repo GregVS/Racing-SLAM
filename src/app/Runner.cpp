@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <yaml-cpp/yaml.h>
 
 #include "../Camera.h"
@@ -107,6 +108,31 @@ void run_viewer(Slam& slam, const Camera& camera)
     }
 }
 
+void write_point_cloud(const std::filesystem::path& path, const Slam& slam)
+{
+    size_t count = 0;
+    for (const auto& point : slam.map()) {
+        (void)point;
+        count++;
+    }
+    std::ofstream ply(path);
+    ply << "ply\nformat ascii 1.0\nelement vertex " << count << "\n"
+        << "property float x\nproperty float y\nproperty float z\n"
+        << "property uchar red\nproperty uchar green\nproperty uchar blue\n"
+        << "property int frame\nend_header\n";
+    for (const auto& point : slam.map()) {
+        // The earliest observing key frame stands in for the creation frame
+        size_t first = std::numeric_limits<size_t>::max();
+        for (const auto& [frame, index] : point.observations()) {
+            first = std::min(first, frame->index());
+        }
+        const auto& p = point.position();
+        const auto& c = point.color();
+        ply << p.x() << " " << p.y() << " " << p.z() << " " << int(c[0]) << " " << int(c[1])
+            << " " << int(c[2]) << " " << first << "\n";
+    }
+}
+
 bool write_outputs(const Options& options, const Slam& slam, int seed, double seconds_per_frame)
 {
     std::filesystem::path run_dir = std::filesystem::path(options.output_dir) / options.run_id;
@@ -127,6 +153,8 @@ bool write_outputs(const Options& options, const Slam& slam, int seed, double se
     meta << "frames: " << trajectory.size() << std::endl;
     meta << "seconds_per_frame: " << seconds_per_frame << std::endl;
     meta << "reprojection_error: " << slam.reprojection_error() << std::endl;
+
+    write_point_cloud(run_dir / (options.sequence + ".ply"), slam);
 
     std::cout << "Trajectory written to: " << trajectory_path.string() << std::endl;
     return true;
