@@ -6,6 +6,12 @@
 
 namespace slam::features {
 
+cv::Mat BaseFeatureExtractor::refresh_descriptors(const cv::Mat& image,
+                                                  const ExtractedFeatures& features) const
+{
+    return features.descriptors;
+}
+
 std::vector<FeatureMatch>
 BaseFeatureExtractor::match_features(const ExtractedFeatures& prev_features,
                                      const ExtractedFeatures& features) const

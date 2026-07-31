@@ -44,6 +44,9 @@ class BaseFeatureExtractor {
   public:
     virtual ExtractedFeatures extract_features(const cv::Mat& image, const cv::Mat& mask) const = 0;
 
+    virtual cv::Mat refresh_descriptors(const cv::Mat& image,
+                                        const ExtractedFeatures& features) const;
+
     virtual std::vector<FeatureMatch> match_features(const ExtractedFeatures& prev_features,
                                                      const ExtractedFeatures& features) const;
 
