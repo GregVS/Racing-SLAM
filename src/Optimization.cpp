@@ -49,12 +49,8 @@ class ReprojectionError {
                                        float principal_point_x,
                                        float principal_point_y)
     {
-        return new ceres::AutoDiffCostFunction<ReprojectionError, 2, 6, 3>(
-            new ReprojectionError(obs_x,
-                                  obs_y,
-                                  focal_length,
-                                  principal_point_x,
-                                  principal_point_y));
+        return new ceres::AutoDiffCostFunction<ReprojectionError, 2, 6, 3>(new ReprojectionError(
+            obs_x, obs_y, focal_length, principal_point_x, principal_point_y));
     }
 
   private:
@@ -64,6 +60,45 @@ class ReprojectionError {
     const float m_principal_point_x;
     const float m_principal_point_y;
 };
+
+class StepLengthError {
+  public:
+    StepLengthError(float distance, float sigma) : m_distance(distance), m_sigma(sigma) {}
+
+    template <typename T>
+    bool operator()(const T* const camera_a, const T* const camera_b, T* residual) const
+    {
+        T center_a[3], center_b[3];
+        camera_center(camera_a, center_a);
+        camera_center(camera_b, center_b);
+        T dx = center_a[0] - center_b[0];
+        T dy = center_a[1] - center_b[1];
+        T dz = center_a[2] - center_b[2];
+        residual[0] = (sqrt(dx * dx + dy * dy + dz * dz + T(1e-12)) - T(m_distance)) / T(m_sigma);
+        return true;
+    }
+
+    static ceres::CostFunction* Create(float distance, float sigma)
+    {
+        return new ceres::AutoDiffCostFunction<StepLengthError, 1, 6, 6>(
+            new StepLengthError(distance, sigma));
+    }
+
+  private:
+    template <typename T> static void camera_center(const T* const camera, T* center)
+    {
+        const T rotation_inverse[3] = {-camera[0], -camera[1], -camera[2]};
+        ceres::AngleAxisRotatePoint(rotation_inverse, &camera[3], center);
+        center[0] = -center[0];
+        center[1] = -center[1];
+        center[2] = -center[2];
+    }
+
+    const float m_distance;
+    const float m_sigma;
+};
+
+static const float STEP_SIGMA_FRACTION = 0.5f;
 
 static Eigen::Matrix3f rodrigues_to_matrix(const Eigen::Vector3f& rvec)
 {
@@ -127,12 +162,12 @@ void optimize(const OptimizationConfig& config, const Camera& camera, Map& map)
                 continue;
             }
 
-            auto cost_function = ReprojectionError::Create(
-                frame->keypoint(match.keypoint_index).pt.x,
-                frame->keypoint(match.keypoint_index).pt.y,
-                camera.get_intrinsic_matrix()(0, 0),
-                camera.get_intrinsic_matrix()(0, 2),
-                camera.get_intrinsic_matrix()(1, 2));
+            auto cost_function =
+                ReprojectionError::Create(frame->keypoint(match.keypoint_index).pt.x,
+                                          frame->keypoint(match.keypoint_index).pt.y,
+                                          camera.get_intrinsic_matrix()(0, 0),
+                                          camera.get_intrinsic_matrix()(0, 2),
+                                          camera.get_intrinsic_matrix()(1, 2));
             problem.AddResidualBlock(cost_function,
                                      new ceres::HuberLoss(sqrt(5.991)),
                                      frame_params[frame].data(),
@@ -146,6 +181,23 @@ void optimize(const OptimizationConfig& config, const Camera& camera, Map& map)
                 problem.SetParameterBlockConstant(frame_params[frame].data());
             }
         }
+    }
+
+    // Step constraints
+    for (const auto& constraint : config.step_constraints) {
+        if (frame_params.find(constraint.a) == frame_params.end() ||
+            frame_params.find(constraint.b) == frame_params.end() || constraint.distance <= 0) {
+            continue;
+        }
+        if (frames_to_optimize.find(constraint.a) == frames_to_optimize.end() &&
+            frames_to_optimize.find(constraint.b) == frames_to_optimize.end()) {
+            continue;
+        }
+        problem.AddResidualBlock(
+            StepLengthError::Create(constraint.distance, STEP_SIGMA_FRACTION * constraint.distance),
+            new ceres::HuberLoss(2.0),
+            frame_params[constraint.a].data(),
+            frame_params[constraint.b].data());
     }
 
     // Solve problem
@@ -163,12 +215,10 @@ void optimize(const OptimizationConfig& config, const Camera& camera, Map& map)
             continue;
         }
 
-        auto rvec = Eigen::Vector3f(frame_params[frame][0],
-                                    frame_params[frame][1],
-                                    frame_params[frame][2]);
-        auto tvec = Eigen::Vector3f(frame_params[frame][3],
-                                    frame_params[frame][4],
-                                    frame_params[frame][5]);
+        auto rvec =
+            Eigen::Vector3f(frame_params[frame][0], frame_params[frame][1], frame_params[frame][2]);
+        auto tvec =
+            Eigen::Vector3f(frame_params[frame][3], frame_params[frame][4], frame_params[frame][5]);
         Eigen::Matrix4f pose = Eigen::Matrix4f::Identity();
         pose.block<3, 3>(0, 0) = rodrigues_to_matrix(rvec);
         pose.block<3, 1>(0, 3) = tvec;
@@ -181,9 +231,8 @@ void optimize(const OptimizationConfig& config, const Camera& camera, Map& map)
             continue;
         }
 
-        point.set_position(Eigen::Vector3f(map_point_params[&point][0],
-                                           map_point_params[&point][1],
-                                           map_point_params[&point][2]));
+        point.set_position(Eigen::Vector3f(
+            map_point_params[&point][0], map_point_params[&point][1], map_point_params[&point][2]));
     }
 }
 

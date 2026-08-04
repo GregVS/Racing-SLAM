@@ -328,9 +328,12 @@ void Slam::initialize()
         };
         optimization::optimize(config, m_camera, m_map);
 
+        float target = m_config.metric_steps.empty()
+                           ? 1.0f
+                           : metric_distance(ref_frame->index(), query_frame->index());
         float scale =
-            1.0f / (query_frame->pose().block<3, 1>(0, 3) - ref_frame->pose().block<3, 1>(0, 3))
-                       .stableNorm();
+            target / (query_frame->pose().block<3, 1>(0, 3) - ref_frame->pose().block<3, 1>(0, 3))
+                         .stableNorm();
         std::cout << "Scale: " << scale << std::endl;
 
         auto scaled_pose = query_frame->pose();
@@ -440,6 +443,9 @@ std::vector<FeatureMatch> Slam::initial_pose_estimate(Frame& frame,
             };
             float last_step =
                 (center(m_trajectory[index]) - center(m_trajectory[index - 1])).norm();
+            if (!m_config.metric_steps.empty()) {
+                last_step = metric_distance(index, frame.index());
+            }
             auto scaled = pose_estimate.pose;
             if (scaled.block<3, 1>(0, 3).norm() > 1e-6f && last_step > 1e-6f) {
                 scaled.block<3, 1>(0, 3) *= last_step / scaled.block<3, 1>(0, 3).norm();
@@ -674,9 +680,32 @@ void Slam::init_key_frame(Frame& frame)
             }
         }
         frame_configs.push_back({true, &frame});
+
+        // Step constraints
+        std::vector<optimization::StepConstraint> step_constraints;
+        if (!m_config.metric_steps.empty()) {
+            std::unordered_set<const Frame*> selected;
+            for (const auto& frame_config : frame_configs) {
+                selected.insert(frame_config.frame);
+            }
+            for (size_t i = 1; i < m_key_frames.size(); i++) {
+                const Frame* previous = m_key_frames[i - 1].get();
+                const Frame* current = m_key_frames[i].get();
+                if (selected.count(previous) && selected.count(current)) {
+                    step_constraints.push_back(
+                        {previous, current, metric_distance(previous->index(), current->index())});
+                }
+            }
+            step_constraints.push_back(
+                {m_key_frames.back().get(),
+                 &frame,
+                 metric_distance(m_key_frames.back()->index(), frame.index())});
+        }
+
         auto config = optimization::OptimizationConfig{
             .optimize_points = true,
             .frames = frame_configs,
+            .step_constraints = step_constraints,
         };
         optimization::optimize(config, m_camera, m_map);
     }
@@ -685,6 +714,15 @@ void Slam::init_key_frame(Frame& frame)
     if (m_config.cull_points) {
         cull_points();
     }
+}
+
+float Slam::metric_distance(size_t from, size_t to) const
+{
+    float distance = 0;
+    for (size_t i = from; i < to && i < m_config.metric_steps.size(); i++) {
+        distance += m_config.metric_steps[i];
+    }
+    return distance;
 }
 
 void Slam::cull_points()

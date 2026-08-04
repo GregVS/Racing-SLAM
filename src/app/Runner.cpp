@@ -180,6 +180,14 @@ int run(const Options& options)
         .cull_points = true,
         .essential_matrix_estimation = true,
     };
+    if (yaml["steps"]) {
+        std::ifstream steps(yaml["steps"].as<std::string>());
+        float step;
+        while (steps >> step) {
+            config.metric_steps.push_back(step);
+        }
+        std::cout << "Metric steps loaded: " << config.metric_steps.size() << std::endl;
+    }
     Slam slam(setup.video_loader,
               setup.camera,
               setup.mask,

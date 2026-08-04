@@ -15,6 +15,7 @@ struct SlamConfig {
     bool optimize_pose = true;
     bool cull_points = true;
     bool essential_matrix_estimation = true;
+    std::vector<float> metric_steps;
 };
 
 class Slam {
@@ -69,6 +70,7 @@ class Slam {
     void update_tracks(const std::vector<FeatureMatch>& matches);
     void track_from_last_frame(Frame& frame, const std::vector<FeatureMatch>& matches);
     void triangulate_tracks(Frame& frame);
+    float metric_distance(size_t from, size_t to) const;
     void match_with_last_key_frame(Frame& frame);
     void optimize_pose(Frame& frame);
     void match_with_map(Frame& frame);
