@@ -23,10 +23,14 @@ class MapPoint {
     const cv::Vec3b& color() const;
     void set_color(const cv::Vec3b& color);
 
+    bool track_consistent() const;
+    void set_track_consistent();
+
   private:
     Eigen::Vector3f m_position;
+    bool m_track_consistent = false;
     cv::Vec3b m_color;
     std::unordered_map<const Frame*, size_t> m_observations;
 };
 
-}  // namespace slam
+} // namespace slam

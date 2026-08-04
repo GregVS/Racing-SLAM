@@ -1,5 +1,7 @@
 #include "Slam.h"
 
+#include <algorithm>
+#include <cmath>
 #include <unordered_set>
 #include <vector>
 
@@ -69,10 +71,22 @@ std::pair<ExtractedFeatures, std::vector<FeatureMatch>> Slam::track_features(con
     std::vector<cv::Point2f> next_points, back_points;
     std::vector<uchar> forward_ok, backward_ok;
     auto window = cv::Size(KLT_WINDOW, KLT_WINDOW);
-    cv::calcOpticalFlowPyrLK(prev_gray, next_gray, prev_points, next_points, forward_ok,
-                             cv::noArray(), window, KLT_PYRAMID_LEVELS);
-    cv::calcOpticalFlowPyrLK(next_gray, prev_gray, next_points, back_points, backward_ok,
-                             cv::noArray(), window, KLT_PYRAMID_LEVELS);
+    cv::calcOpticalFlowPyrLK(prev_gray,
+                             next_gray,
+                             prev_points,
+                             next_points,
+                             forward_ok,
+                             cv::noArray(),
+                             window,
+                             KLT_PYRAMID_LEVELS);
+    cv::calcOpticalFlowPyrLK(next_gray,
+                             prev_gray,
+                             next_points,
+                             back_points,
+                             backward_ok,
+                             cv::noArray(),
+                             window,
+                             KLT_PYRAMID_LEVELS);
 
     ExtractedFeatures features;
     std::vector<FeatureMatch> matches;
@@ -83,10 +97,11 @@ std::pair<ExtractedFeatures, std::vector<FeatureMatch>> Slam::track_features(con
             continue;
         }
         auto point = cv::Point(cvRound(next_points[i].x), cvRound(next_points[i].y));
-        if (point.x < 0 || point.y < 0 || point.x >= next_gray.cols ||
-            point.y >= next_gray.rows || m_static_mask.at<uchar>(point) == 0) {
+        if (point.x < 0 || point.y < 0 || point.x >= next_gray.cols || point.y >= next_gray.rows ||
+            m_static_mask.at<uchar>(point) == 0) {
             continue;
         }
+
         auto keypoint = prev_features.keypoints[i];
         keypoint.pt = next_points[i];
         matches.push_back(FeatureMatch(i, features.keypoints.size()));
@@ -156,17 +171,28 @@ void Slam::initialize()
         std::vector<cv::Point2f> next, back;
         std::vector<uchar> ok_forward, ok_backward;
         auto window = cv::Size(KLT_WINDOW, KLT_WINDOW);
-        cv::calcOpticalFlowPyrLK(previous_gray, gray, current, next, ok_forward, cv::noArray(),
-                                 window, KLT_PYRAMID_LEVELS);
-        cv::calcOpticalFlowPyrLK(gray, previous_gray, next, back, ok_backward, cv::noArray(),
-                                 window, KLT_PYRAMID_LEVELS);
+        cv::calcOpticalFlowPyrLK(previous_gray,
+                                 gray,
+                                 current,
+                                 next,
+                                 ok_forward,
+                                 cv::noArray(),
+                                 window,
+                                 KLT_PYRAMID_LEVELS);
+        cv::calcOpticalFlowPyrLK(gray,
+                                 previous_gray,
+                                 next,
+                                 back,
+                                 ok_backward,
+                                 cv::noArray(),
+                                 window,
+                                 KLT_PYRAMID_LEVELS);
         std::vector<cv::Point2f> alive;
         std::vector<int> alive_origin;
         for (size_t i = 0; i < current.size(); i++) {
             if (!ok_forward[i] || !ok_backward[i] ||
-                cv::norm(current[i] - back[i]) > KLT_MAX_FORWARD_BACKWARD_ERROR ||
-                next[i].x < 0 || next[i].y < 0 || next[i].x >= gray.cols ||
-                next[i].y >= gray.rows) {
+                cv::norm(current[i] - back[i]) > KLT_MAX_FORWARD_BACKWARD_ERROR || next[i].x < 0 ||
+                next[i].y < 0 || next[i].x >= gray.cols || next[i].y >= gray.rows) {
                 continue;
             }
             alive.push_back(next[i]);
@@ -202,7 +228,8 @@ void Slam::initialize()
         for (size_t i = 0; i < current.size(); i++) {
             displacement.push_back(cv::norm(current[i] - chains[origin[i]].front()));
         }
-        std::nth_element(displacement.begin(), displacement.begin() + displacement.size() / 2,
+        std::nth_element(displacement.begin(),
+                         displacement.begin() + displacement.size() / 2,
                          displacement.end());
         if (displacement[displacement.size() / 2] < 20.0f) {
             continue;
@@ -255,8 +282,17 @@ void Slam::initialize()
         cv::Mat intrinsics;
         cv_utils::intrinsic_mat_cv(m_camera).convertTo(intrinsics, CV_64F);
         cv::Mat rvec, tvec, inliers;
-        bool solved = cv::solvePnPRansac(object_points, image_points, intrinsics, cv::Mat(),
-                                         rvec, tvec, false, 200, 2.0f, 0.99, inliers,
+        bool solved = cv::solvePnPRansac(object_points,
+                                         image_points,
+                                         intrinsics,
+                                         cv::Mat(),
+                                         rvec,
+                                         tvec,
+                                         false,
+                                         200,
+                                         2.0f,
+                                         0.99,
+                                         inliers,
                                          cv::SOLVEPNP_EPNP);
         float support = solved ? float(inliers.rows) / object_points.size() : 0.0f;
         std::cout << "Init candidate " << anchor_index << "->" << frame_index << ": "
@@ -357,6 +393,15 @@ bool Slam::step()
 
     m_last_frame = frame;
     record_pose(*frame);
+
+    // Extend tracks
+    for (size_t i = 0; i < frame->features().keypoints.size(); i++) {
+        auto& observations = m_tracks[i].observations;
+        if (observations.size() < 100) {
+            auto pixel = frame->keypoint(i).pt;
+            observations.push_back({frame->pose(), Eigen::Vector2f(pixel.x, pixel.y)});
+        }
+    }
     return true;
 }
 
@@ -422,9 +467,7 @@ void Slam::track_from_last_frame(Frame& frame, const std::vector<FeatureMatch>& 
             continue;
         }
         const auto& point = m_last_frame->map_match(match.train_index);
-        // Mint early, trust late: a single-key-frame point exists so coverage never starves,
-        // but earns a pose vote only once a second observation confirms it
-        if (point.observations().size() < 2) {
+        if (point.observations().size() < 2 && !point.track_consistent()) {
             continue;
         }
         object_points.push_back(
@@ -491,82 +534,60 @@ void Slam::update_tracks(const std::vector<FeatureMatch>& matches)
     std::unordered_map<size_t, FeatureTrack> carried;
     for (const auto& match : matches) {
         auto existing = m_tracks.find(match.train_index);
-        carried[match.query_index] =
-            existing != m_tracks.end() ? existing->second : FeatureTrack{};
+        carried[match.query_index] = existing != m_tracks.end() ? existing->second : FeatureTrack{};
     }
     m_tracks = std::move(carried);
 }
 
 void Slam::triangulate_tracks(Frame& frame)
 {
-    // Group by anchor key frame so every group shares one live pose pair; tracks without an
-    // anchor yet have no independent view and wait
-    std::unordered_map<size_t, std::vector<size_t>> by_anchor;
+    size_t created = 0;
+    size_t validated = 0;
+    std::vector<size_t> inconsistent;
     for (const auto& [keypoint_index, track] : m_tracks) {
-        if (frame.is_matched(keypoint_index) || track.anchor_key_frame == nullptr) {
+        if (frame.is_matched(keypoint_index) || track.observations.empty()) {
             continue;
         }
-        by_anchor[track.anchor_key_frame->index()].push_back(keypoint_index);
-    }
-
-    size_t created = 0;
-    std::vector<size_t> poisoned;
-    for (const auto& [anchor_index, keypoint_indices] : by_anchor) {
-        const auto& track = m_tracks.at(keypoint_indices.front());
-        std::vector<Eigen::Vector2f> anchor_points;
-        std::vector<Eigen::Vector2f> current_points;
-        for (auto index : keypoint_indices) {
-            anchor_points.push_back(m_tracks.at(index).anchor_pixel);
-            auto pixel = frame.keypoint(index).pt;
-            current_points.push_back(Eigen::Vector2f(pixel.x, pixel.y));
-        }
-
-        auto points = triangulation::triangulate_points(anchor_points,
-                                                        current_points,
-                                                        track.anchor_key_frame->pose(),
+        auto pixel = frame.keypoint(keypoint_index).pt;
+        auto points = triangulation::triangulate_points({track.observations.front().second},
+                                                        {Eigen::Vector2f(pixel.x, pixel.y)},
+                                                        track.observations.front().first,
                                                         frame.pose(),
                                                         m_camera,
                                                         TRACK_MIN_PARALLAX_COSINE,
                                                         TRACK_MAX_REPROJECTION_ERROR);
-        for (const auto& point : points) {
-            auto keypoint_index = keypoint_indices[point.match_index];
-            // Two views cannot expose a track that slid off its physical point but stayed
-            // self-consistent; the observation at the key frame in between can
-            const auto& candidate = m_tracks.at(keypoint_index);
-            if (candidate.mid_key_frame != candidate.anchor_key_frame) {
-                auto mid_error =
-                    (m_camera.project(candidate.mid_key_frame->pose(), point.position) -
-                     candidate.mid_pixel)
-                        .norm();
-                if (mid_error > 2) {
-                    poisoned.push_back(keypoint_index);
-                    continue;
-                }
-            }
-            m_map.create_point(point.position, frame, keypoint_index);
-            created++;
-        }
-    }
-
-    for (auto keypoint_index : poisoned) {
-        m_tracks.erase(keypoint_index);
-    }
-
-    // Anchor new tracks to this key frame; it becomes the latest observation of the rest
-    for (auto& [keypoint_index, track] : m_tracks) {
-        if (frame.is_matched(keypoint_index)) {
+        if (points.empty()) {
             continue;
         }
-        auto pixel = frame.keypoint(keypoint_index).pt;
-        if (track.anchor_key_frame == nullptr) {
-            track.anchor_key_frame = &frame;
-            track.anchor_pixel = Eigen::Vector2f(pixel.x, pixel.y);
+
+        // Check if reprojects consistently into all observed frames
+        bool consistent = true;
+        for (const auto& [pose, observed] : track.observations) {
+            if ((m_camera.project(pose, points.front().position) - observed).norm() >
+                TRACK_MAX_REPROJECTION_ERROR) {
+                consistent = false;
+                break;
+            }
         }
-        track.mid_key_frame = &frame;
-        track.mid_pixel = Eigen::Vector2f(pixel.x, pixel.y);
+        if (!consistent) {
+            inconsistent.push_back(keypoint_index);
+            continue;
+        }
+
+        auto& point = m_map.create_point(points.front().position, frame, keypoint_index);
+        if (track.observations.size() >= 3) {
+            point.set_track_consistent();
+            validated++;
+        }
+        created++;
+    }
+
+    for (auto keypoint_index : inconsistent) {
+        m_tracks.erase(keypoint_index);
     }
     std::cout << "Triangulated from tracks: " << created << " of " << m_tracks.size()
-              << " tracks, poisoned " << poisoned.size() << std::endl;
+              << " tracks, consistent " << validated << ", poisoned " << inconsistent.size()
+              << std::endl;
 }
 
 void Slam::match_with_last_key_frame(Frame& frame)

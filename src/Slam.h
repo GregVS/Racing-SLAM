@@ -54,13 +54,8 @@ class Slam {
     std::shared_ptr<Frame> m_last_frame;
     std::vector<Eigen::Matrix4f> m_trajectory;
 
-    /** A feature followed across frames by optical flow, keyed by its keypoint index in the
-     * latest frame */
     struct FeatureTrack {
-        const Frame* anchor_key_frame = nullptr;
-        Eigen::Vector2f anchor_pixel;
-        const Frame* mid_key_frame = nullptr;
-        Eigen::Vector2f mid_pixel;
+        std::vector<std::pair<Eigen::Matrix4f, Eigen::Vector2f>> observations;
     };
     std::unordered_map<size_t, FeatureTrack> m_tracks;
 

@@ -45,6 +45,16 @@ bool MapPoint::is_observed_by(const Frame* key_frame) const
     return m_observations.find(key_frame) != m_observations.end();
 }
 
+bool MapPoint::track_consistent() const
+{
+    return m_track_consistent;
+}
+
+void MapPoint::set_track_consistent()
+{
+    m_track_consistent = true;
+}
+
 const cv::Vec3b& MapPoint::color() const
 {
     return m_color;
