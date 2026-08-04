@@ -35,11 +35,6 @@ static const float TRACK_MAX_REPROJECTION_ERROR = 4.0f;
 static const size_t MIN_PNP_POINTS = 15;
 static const float PNP_REPROJECTION_ERROR = 4.0f;
 
-// Reviving a dropped track by appearance; strict, since a wrong revival teleports a track
-static const float REVIVE_MAX_DISTANCE = 50.0f;   // Hamming, against ORB's 256 bits
-static const float REVIVE_RATIO = 0.75f;          // Best must beat second best by this
-static const float REVIVE_SEARCH_RADIUS = 120.0f; // px from the median-flow prediction
-
 Slam::Slam(const VideoLoader& video_loader,
            const Camera& camera,
            const cv::Mat& image_mask,
@@ -81,13 +76,10 @@ std::pair<ExtractedFeatures, std::vector<FeatureMatch>> Slam::track_features(con
 
     ExtractedFeatures features;
     std::vector<FeatureMatch> matches;
-    std::vector<size_t> lost;
-    std::vector<cv::Point2f> flow;
     cv::Mat replenish_mask = m_static_mask.clone();
     for (size_t i = 0; i < prev_points.size(); i++) {
         if (!forward_ok[i] || !backward_ok[i] ||
             cv::norm(prev_points[i] - back_points[i]) > KLT_MAX_FORWARD_BACKWARD_ERROR) {
-            lost.push_back(i);
             continue;
         }
         auto point = cv::Point(cvRound(next_points[i].x), cvRound(next_points[i].y));
@@ -95,8 +87,6 @@ std::pair<ExtractedFeatures, std::vector<FeatureMatch>> Slam::track_features(con
             point.y >= next_gray.rows || m_static_mask.at<uchar>(point) == 0) {
             continue;
         }
-        flow.push_back(next_points[i] - prev_points[i]);
-
         auto keypoint = prev_features.keypoints[i];
         keypoint.pt = next_points[i];
         matches.push_back(FeatureMatch(i, features.keypoints.size()));
@@ -109,59 +99,10 @@ std::pair<ExtractedFeatures, std::vector<FeatureMatch>> Slam::track_features(con
     // the detector returns corners strongest first, so capping the total keeps the best
     auto new_features = m_feature_extractor->extract_features(image, replenish_mask);
 
-    // Revive tracks flow dropped, by appearance: flow models a patch as pure translation,
-    // which fails in a tight turn. A revived point keeps its identity, so the track and
-    // everything anchored to it survive
-    std::vector<bool> claimed(new_features.keypoints.size(), false);
-    size_t revived = 0;
-    if (!lost.empty() && !new_features.keypoints.empty() && flow.size() >= 8) {
-        // Image motion is rotation-dominated, so the median surviving flow predicts where a
-        // lost point should have landed
-        std::vector<float> dx, dy;
-        for (const auto& f : flow) {
-            dx.push_back(f.x);
-            dy.push_back(f.y);
-        }
-        std::nth_element(dx.begin(), dx.begin() + dx.size() / 2, dx.end());
-        std::nth_element(dy.begin(), dy.begin() + dy.size() / 2, dy.end());
-        cv::Point2f median(dx[dx.size() / 2], dy[dy.size() / 2]);
-
-        cv::Mat lost_descriptors;
-        for (auto i : lost) {
-            lost_descriptors.push_back(prev_features.descriptors.row(i));
-        }
-        std::vector<std::vector<cv::DMatch>> knn;
-        cv::BFMatcher(cv::NORM_HAMMING).knnMatch(lost_descriptors, new_features.descriptors,
-                                                 knn, 2);
-        for (size_t k = 0; k < knn.size(); k++) {
-            if (knn[k].size() < 2 || knn[k][0].distance > REVIVE_MAX_DISTANCE ||
-                knn[k][0].distance > REVIVE_RATIO * knn[k][1].distance) {
-                continue;
-            }
-            int candidate = knn[k][0].trainIdx;
-            if (claimed[candidate]) {
-                continue;
-            }
-            auto predicted = prev_points[lost[k]] + median;
-            if (cv::norm(new_features.keypoints[candidate].pt - predicted) >
-                REVIVE_SEARCH_RADIUS) {
-                continue;
-            }
-            claimed[candidate] = true;
-            matches.push_back(FeatureMatch(lost[k], features.keypoints.size()));
-            features.keypoints.push_back(new_features.keypoints[candidate]);
-            features.descriptors.push_back(new_features.descriptors.row(candidate));
-            revived++;
-        }
-    }
-
     size_t budget = features.keypoints.size() < MAX_TRACKED_FEATURES
                         ? MAX_TRACKED_FEATURES - features.keypoints.size()
                         : 0;
     for (size_t i = 0; i < new_features.keypoints.size() && budget > 0; i++) {
-        if (claimed[i]) {
-            continue;
-        }
         features.keypoints.push_back(new_features.keypoints[i]);
         features.descriptors.push_back(new_features.descriptors.row(i));
         budget--;
@@ -172,8 +113,7 @@ std::pair<ExtractedFeatures, std::vector<FeatureMatch>> Slam::track_features(con
     features.descriptors = m_feature_extractor->refresh_descriptors(image, features);
 
     std::cout << "Tracked features: " << matches.size() << " of " << prev_points.size()
-              << ", revived " << revived << " of " << lost.size() << ", replenished "
-              << new_features.keypoints.size() << std::endl;
+              << ", replenished " << new_features.keypoints.size() << std::endl;
     return {features, matches};
 }
 
