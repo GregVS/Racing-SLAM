@@ -14,6 +14,7 @@ namespace slam::optimization {
 struct FrameConfig {
     bool optimize;
     Frame* frame;
+    bool optimize_position = true;
 };
 
 /** Ties the distance between two poses to wheel odometry measurement */
@@ -29,7 +30,6 @@ struct OptimizationConfig {
     std::vector<StepConstraint> step_constraints;
 };
 
-/** This function modifies the frames and map in place */
-void optimize(const OptimizationConfig& config, const Camera& camera, Map& map);
+bool optimize(const OptimizationConfig& config, const Camera& camera, Map& map);
 
 } // namespace slam::optimization

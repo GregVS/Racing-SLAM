@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -128,8 +129,8 @@ void write_point_cloud(const std::filesystem::path& path, const Slam& slam)
         }
         const auto& p = point.position();
         const auto& c = point.color();
-        ply << p.x() << " " << p.y() << " " << p.z() << " " << int(c[0]) << " " << int(c[1])
-            << " " << int(c[2]) << " " << first << "\n";
+        ply << p.x() << " " << p.y() << " " << p.z() << " " << int(c[0]) << " " << int(c[1]) << " "
+            << int(c[2]) << " " << first << "\n";
     }
 }
 
@@ -172,6 +173,12 @@ int run(const Options& options)
     std::cout << "Random seed: " << seed << std::endl;
 
     Setup setup = load_setup(yaml);
+    float fps = yaml["fps"] ? yaml["fps"].as<float>() : setup.video_loader.get_fps();
+    if (!std::isfinite(fps) || fps <= 0.0F) {
+        std::cerr << "A positive fps is required for temporal motion constraints" << std::endl;
+        return 1;
+    }
+    std::cout << "Frame rate: " << fps << " fps" << std::endl;
 
     SlamConfig config = {
         .triangulate_points = true,
@@ -179,6 +186,7 @@ int run(const Options& options)
         .optimize_pose = true,
         .cull_points = true,
         .essential_matrix_estimation = true,
+        .seconds_per_frame = 1.0F / fps,
     };
     if (yaml["steps"]) {
         std::ifstream steps(yaml["steps"].as<std::string>());
