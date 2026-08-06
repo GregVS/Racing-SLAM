@@ -85,6 +85,11 @@ void Map::add_association(Frame& frame, const MapPointMatch& match)
     frame.add_map_match(match);
 }
 
+size_t Map::size() const
+{
+    return m_points.size();
+}
+
 // Const Map Point Iterator
 Map::const_iterator Map::begin() const
 {

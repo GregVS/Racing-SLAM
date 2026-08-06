@@ -18,10 +18,11 @@ Slam::Slam(const VideoLoader& video_loader,
 
 bool Slam::step()
 {
-    std::cout << "----------------------------------------" << std::endl;
+    std::cout << "---------------------------------------- frame " << m_frame_index << "\n";
+    m_diagnostics = FrameDiagnostics{};
     auto image = m_video_loader.get_next_frame();
     if (image.empty()) {
-        std::cout << "No frame to process" << std::endl;
+        std::cout << "No frame to process\n";
         return false;
     }
 
@@ -64,6 +65,7 @@ bool Slam::step()
 
     m_last_frame = frame;
     record_pose(*frame);
+    m_diagnostics.map_size = m_map.size();
 
     // Extend tracks
     for (size_t i = 0; i < frame->features().keypoints.size(); i++) {
@@ -110,6 +112,11 @@ float Slam::reprojection_error() const
         }
     }
     return error / num_projected;
+}
+
+const FrameDiagnostics& Slam::diagnostics() const
+{
+    return m_diagnostics;
 }
 
 const Map& Slam::map() const

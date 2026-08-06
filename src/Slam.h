@@ -19,6 +19,15 @@ struct SlamConfig {
     std::vector<float> metric_steps;
 };
 
+/** For visualization purposes */
+struct FrameDiagnostics {
+    size_t map_size = 0;
+    size_t triangulated = 0;
+    size_t track_consistent = 0;
+    size_t poisoned = 0;
+    std::vector<Eigen::Vector3f> culled;
+};
+
 class Slam {
   public:
     Slam(const VideoLoader& video_loader,
@@ -33,6 +42,7 @@ class Slam {
     bool step();
 
     float reprojection_error() const;
+    const FrameDiagnostics& diagnostics() const;
     const Map& map() const;
     const Frame& frame() const;
     std::vector<Eigen::Matrix4f> poses() const;
@@ -54,6 +64,8 @@ class Slam {
     Map m_map;
     std::vector<std::shared_ptr<Frame>> m_key_frames;
     std::shared_ptr<Frame> m_last_frame;
+
+    FrameDiagnostics m_diagnostics;
 
     struct TrajectoryEntry {
         const Frame* reference = nullptr; // null before the first key frame exists

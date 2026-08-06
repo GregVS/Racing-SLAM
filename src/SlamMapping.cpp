@@ -100,6 +100,9 @@ void Slam::triangulate_tracks(Frame& frame)
     for (const auto keypoint_index : inconsistent) {
         m_tracks.erase(keypoint_index);
     }
+    m_diagnostics.triangulated = created;
+    m_diagnostics.track_consistent = validated;
+    m_diagnostics.poisoned = inconsistent.size();
     std::cout << "Triangulated from tracks: " << created << " of " << m_tracks.size() << " tracks, consistent "
               << validated << ", inconsistent " << inconsistent.size() << ", key frame anchors " << ba_frames << '\n';
 }
@@ -248,7 +251,9 @@ void Slam::cull_points()
     }
 
     std::cout << "Number of points to remove: " << points_to_remove.size() << '\n';
+    m_diagnostics.culled.reserve(points_to_remove.size());
     for (const auto& point : points_to_remove) {
+        m_diagnostics.culled.push_back(point->position());
         m_map.remove_point(point);
     }
 }

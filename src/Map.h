@@ -26,6 +26,8 @@ class Map {
 
     void add_association(Frame& frame, const MapPointMatch& match);
 
+    size_t size() const;
+
     // Const iterator for map points
     class const_iterator {
       public:
