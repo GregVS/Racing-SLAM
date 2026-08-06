@@ -42,15 +42,11 @@ bool Slam::step()
     time_it("Initial pose estimation", [&]() { inlier_matches = initial_pose_estimate(*frame, tracked); });
     time_it("Update tracks", [&]() { update_tracks(inlier_matches); });
     time_it("Track from last frame", [&]() { track_from_last_frame(*frame, inlier_matches); });
+
     time_it("Optimize pose", [&]() { optimize_pose(*frame); });
 
-    // Match with map from last key frame
     time_it("Match with last key frame", [&]() { match_with_last_key_frame(*frame); });
-    time_it("Optimize pose", [&]() { optimize_pose(*frame); });
-
-    // Match with all map points
     time_it("Match with map", [&]() { match_with_map(*frame); });
-    time_it("Optimize pose", [&]() { optimize_pose(*frame); });
 
     // Create key frame if needed
     bool is_key_frame = false;
