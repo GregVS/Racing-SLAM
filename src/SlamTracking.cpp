@@ -16,9 +16,7 @@ constexpr int KLT_PYRAMID_LEVELS = 4;
 constexpr float KLT_MAX_FORWARD_BACKWARD_ERROR = 1.0F;
 constexpr int KLT_REPLENISH_RADIUS = 5;
 constexpr size_t MAX_TRACKED_FEATURES = 2000;
-constexpr size_t MIN_PNP_POINTS = 15;
-constexpr float PNP_REPROJECTION_ERROR = 4.0F;
-constexpr float MIN_PNP_INLIER_RATIO = 0.5F;
+constexpr size_t MIN_TRACKED_MAP_POINTS = 15;
 
 cv::Mat to_gray(const cv::Mat& image)
 {
@@ -128,16 +126,17 @@ std::vector<FeatureMatch> Slam::initial_pose_estimate(Frame& frame, const std::v
                 }
             }
             Eigen::Matrix4f candidate = relative * m_last_frame->pose();
+            if (!motion::is_rotation_plausible(m_last_frame->pose(), candidate, m_config.seconds_per_frame)) {
+                std::cout << "Essential rotation rejected by temporal motion bound\n";
+                relative.block<3, 3>(0, 0) = Eigen::Matrix3f::Identity();
+                candidate = relative * m_last_frame->pose();
+            }
             if (!m_config.metric_steps.empty() && last_step > 1e-6F) {
-                if (!motion::is_rotation_plausible(m_last_frame->pose(), candidate, m_config.seconds_per_frame)) {
-                    std::cout << "Essential rotation rejected by temporal motion bound\n";
-                    candidate = m_last_frame->pose();
-                }
                 frame.set_pose(motion::with_metric_step(m_last_frame->pose(), candidate, last_step));
                 return pose_estimate.inlier_matches;
             }
 
-            auto scaled = pose_estimate.pose;
+            auto scaled = relative;
             if (scaled.block<3, 1>(0, 3).norm() > 1e-6F && last_step > 1e-6F) {
                 scaled.block<3, 1>(0, 3) *= last_step / scaled.block<3, 1>(0, 3).norm();
                 frame.set_pose(scaled * m_last_frame->pose());
@@ -153,14 +152,9 @@ std::vector<FeatureMatch> Slam::initial_pose_estimate(Frame& frame, const std::v
 
 void Slam::track_from_last_frame(Frame& frame, const std::vector<FeatureMatch>& matches)
 {
-    // The previous frame's map points carry across the 2D-2D matches without needing a pose,
-    // so this is the one place the translation magnitude can be recovered
-    std::vector<cv::Point3f> object_points;
-    std::vector<cv::Point2f> image_points;
+    // Carry over map points from the previous frame that are still visible in the current frame
     std::vector<const MapPoint*> points;
     std::vector<size_t> keypoint_indices;
-    object_points.reserve(matches.size());
-    image_points.reserve(matches.size());
     points.reserve(matches.size());
     keypoint_indices.reserve(matches.size());
     for (const auto& match : matches) {
@@ -171,70 +165,24 @@ void Slam::track_from_last_frame(Frame& frame, const std::vector<FeatureMatch>& 
         if (point.observations().size() < 2 && !point.track_consistent()) {
             continue;
         }
-        object_points.emplace_back(point.position().x(), point.position().y(), point.position().z());
-        image_points.push_back(frame.keypoint(match.query_index).pt);
         points.push_back(&point);
         keypoint_indices.push_back(match.query_index);
     }
 
-    if (object_points.size() < MIN_PNP_POINTS) {
+    if (points.size() < MIN_TRACKED_MAP_POINTS) {
         std::cout << "Too few correspondences to track from last frame\n";
         return;
     }
 
-    // RANSAC rather than least squares: a robust kernel only down-weights wrong matches where
-    // consensus excludes them outright
-    cv::Mat intrinsics;
-    cv_utils::intrinsic_mat_cv(m_camera).convertTo(intrinsics, CV_64F);
-    cv::Mat rvec;
-    cv::Mat tvec;
-    cv::Mat inliers;
-    bool solved = cv::solvePnPRansac(object_points,
-                                     image_points,
-                                     intrinsics,
-                                     cv::Mat(),
-                                     rvec,
-                                     tvec,
-                                     false,
-                                     200,
-                                     PNP_REPROJECTION_ERROR,
-                                     0.99,
-                                     inliers,
-                                     cv::SOLVEPNP_EPNP);
-    float inlier_ratio = solved ? static_cast<float>(inliers.rows) / static_cast<float>(object_points.size()) : 0.0F;
-    if (!solved || inliers.rows < static_cast<int>(MIN_PNP_POINTS) || inlier_ratio < MIN_PNP_INLIER_RATIO) {
-        std::cout << "RANSAC pose rejected, keeping essential matrix estimate\n";
-        return;
-    }
-
-    cv::Mat rotation;
-    cv::Rodrigues(rvec, rotation);
-    Eigen::Matrix4f pose = Eigen::Matrix4f::Identity();
-    for (int i = 0; i < 3; i++) {
-        for (int j = 0; j < 3; j++) {
-            pose(i, j) = rotation.at<double>(i, j);
-        }
-        pose(i, 3) = tvec.at<double>(i, 0);
-    }
-
-    if (!motion::is_rotation_plausible(m_last_frame->pose(), pose, m_config.seconds_per_frame)) {
-        std::cout << "RANSAC pose rejected by temporal motion bound\n";
-        return;
-    }
-    if (m_config.metric_steps.empty()) {
-        frame.set_pose(pose);
-    }
-
-    // PnP is a correspondence-health check only when wheel odometry supplies metric motion.
-    // Its unconstrained pose is too fragile on planar racing scenes to own the vehicle state.
-    for (int i = 0; i < inliers.rows; i++) {
-        int index = inliers.at<int>(i, 0);
-        if (frame.is_matched(keypoint_indices[index]) || frame.is_matched(*points[index])) {
+    size_t accepted = 0;
+    for (size_t i = 0; i < points.size(); i++) {
+        if (frame.is_matched(keypoint_indices[i]) || frame.is_matched(*points[i])) {
             continue;
         }
-        frame.add_map_match(MapPointMatch{*points[index], keypoint_indices[index]});
+        frame.add_map_match(MapPointMatch{*points[i], keypoint_indices[i]});
+        accepted++;
     }
-    std::cout << "Tracked from last frame: " << inliers.rows << " / " << object_points.size() << '\n';
+    std::cout << "Tracked from last frame: " << accepted << " / " << points.size() << '\n';
 }
 
 void Slam::update_tracks(const std::vector<FeatureMatch>& matches)
@@ -275,7 +223,7 @@ void Slam::optimize_pose(Frame& frame)
     if (!m_config.optimize_pose || !m_config.metric_steps.empty()) {
         return;
     }
-    if (frame.num_map_matches() < MIN_PNP_POINTS) {
+    if (frame.num_map_matches() < MIN_TRACKED_MAP_POINTS) {
         return;
     }
 

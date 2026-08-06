@@ -3,6 +3,7 @@
 #include <unordered_set>
 
 #include "Frame.h"
+#include "Helpers.h"
 #include "MotionModel.h"
 #include "Optimization.h"
 #include "Triangulation.h"
@@ -89,7 +90,7 @@ void Slam::init_key_frame(Frame& frame)
 
     // Triangulate from feature tracks rather than key frame to key frame matches
     if (m_config.triangulate_points) {
-        triangulate_tracks(frame);
+        time_it("Triangulate tracks", [&]() { triangulate_tracks(frame); });
     }
 
     // Local bundle adjustment (covisbility graph)
@@ -163,7 +164,8 @@ void Slam::init_key_frame(Frame& frame)
             original_points.push_back({&point, point.position()});
         }
 
-        bool optimized = optimization::optimize(config, m_camera, m_map);
+        bool optimized = false;
+        time_it("Bundle adjustment", [&]() { optimized = optimization::optimize(config, m_camera, m_map); });
         bool healthy = optimized;
         if (healthy && !m_config.metric_steps.empty() &&
             !motion::is_rotation_plausible(m_last_frame->pose(), frame.pose(), m_config.seconds_per_frame)) {
@@ -192,7 +194,7 @@ void Slam::init_key_frame(Frame& frame)
 
     // Cull points
     if (m_config.cull_points) {
-        cull_points();
+        time_it("Cull points", [&]() { cull_points(); });
     }
 }
 
