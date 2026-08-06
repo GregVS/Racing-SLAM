@@ -150,17 +150,16 @@ bool optimize(const OptimizationConfig& config, const Camera& camera, Map& map)
         frame_params[frame][5] = center[2];
     }
 
-    // Add points
+    // Add points observed by frames being optimized
     std::unordered_set<const Frame*> frames_to_optimize;
     std::unordered_set<const MapPoint*> points_to_optimize;
     for (const auto& frame_config : config.frames) {
-        bool optimize_frame = frame_config.optimize;
-        auto* frame = frame_config.frame;
-        if (optimize_frame) {
-            frames_to_optimize.insert(frame);
+        if (!frame_config.optimize) {
+            continue;
         }
+        frames_to_optimize.insert(frame_config.frame);
 
-        for (auto match : frame->map_matches()) {
+        for (auto match : frame_config.frame->map_matches()) {
             const auto& point = match.point;
             map_point_params.emplace(
                 &point, std::array<double, 3>{point.position().x(), point.position().y(), point.position().z()});
@@ -189,14 +188,6 @@ bool optimize(const OptimizationConfig& config, const Camera& camera, Map& map)
                                      new ceres::HuberLoss(sqrt(5.991)),
                                      frame_params[frame].data(),
                                      map_point_params[&match.point].data());
-
-            if (points_to_optimize.find(&match.point) == points_to_optimize.end()) {
-                problem.SetParameterBlockConstant(map_point_params[&match.point].data());
-            }
-
-            if (frames_to_optimize.find(frame) == frames_to_optimize.end()) {
-                problem.SetParameterBlockConstant(frame_params[frame].data());
-            }
         }
     }
 
@@ -222,6 +213,18 @@ bool optimize(const OptimizationConfig& config, const Camera& camera, Map& map)
             new ceres::HuberLoss(2.0),
             frame_params[constraint.a].data(),
             frame_params[constraint.b].data());
+    }
+
+    // Mark frames and points that are not being optimized as constant
+    for (auto& [frame, params] : frame_params) {
+        if (frames_to_optimize.find(frame) == frames_to_optimize.end() && problem.HasParameterBlock(params.data())) {
+            problem.SetParameterBlockConstant(params.data());
+        }
+    }
+    for (auto& [point, params] : map_point_params) {
+        if (points_to_optimize.find(point) == points_to_optimize.end() && problem.HasParameterBlock(params.data())) {
+            problem.SetParameterBlockConstant(params.data());
+        }
     }
 
     // Solve problem
