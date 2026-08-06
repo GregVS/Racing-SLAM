@@ -25,6 +25,11 @@ bool Slam::step()
         return false;
     }
 
+    // Recompute pose relative to the reference key frame
+    if (m_last_frame && m_last_frame->index() < m_trajectory.size()) {
+        m_last_frame->set_pose(pose_at(m_last_frame->index()));
+    }
+
     ExtractedFeatures features;
     std::vector<FeatureMatch> tracked;
     time_it("Track features", [&]() { std::tie(features, tracked) = track_features(image); });
@@ -47,12 +52,13 @@ bool Slam::step()
     time_it("Optimize pose", [&]() { optimize_pose(*frame); });
 
     // Create key frame if needed
+    bool is_key_frame = false;
     time_it("Create key frame", [&]() {
         if (needs_key_frame(*frame, *last_key_frame)) {
-            std::cout << "Adding key frame after " << frame->index() - last_key_frame->index() << " frames"
-                      << std::endl;
+            std::cout << "Adding key frame after " << frame->index() - last_key_frame->index() << " frames\n";
             init_key_frame(*frame);
             m_key_frames.push_back(frame);
+            is_key_frame = true;
         }
     });
 
@@ -64,7 +70,8 @@ bool Slam::step()
         auto& observations = m_tracks[i].observations;
         if (observations.size() < 100) {
             auto pixel = frame->keypoint(i).pt;
-            observations.push_back({frame->pose(), Eigen::Vector2f(pixel.x, pixel.y)});
+            observations.push_back(
+                {frame->pose(), Eigen::Vector2f(pixel.x, pixel.y), is_key_frame ? frame.get() : nullptr, i});
         }
     }
     return true;
@@ -74,9 +81,18 @@ void Slam::record_pose(const Frame& frame)
 {
     // Frames dropped during initialization keep the previous pose so that the trajectory stays
     // indexed by frame index
-    auto fill = m_trajectory.empty() ? Eigen::Matrix4f::Identity() : m_trajectory.back();
+    auto fill = m_trajectory.empty() ? TrajectoryEntry{} : m_trajectory.back();
     m_trajectory.resize(frame.index() + 1, fill);
-    m_trajectory[frame.index()] = frame.pose();
+
+    const Frame* reference = m_key_frames.empty() ? nullptr : m_key_frames.back().get();
+    // Poses are world to camera, so the pose relative to the reference is Tcr = Tcw * Twr
+    m_trajectory[frame.index()] = {reference, reference ? frame.pose() * reference->pose().inverse() : frame.pose()};
+}
+
+Eigen::Matrix4f Slam::pose_at(size_t index) const
+{
+    const auto& entry = m_trajectory[index];
+    return entry.reference ? entry.relative * entry.reference->pose() : entry.relative;
 }
 
 float Slam::reprojection_error() const
@@ -117,12 +133,10 @@ std::vector<Eigen::Matrix4f> Slam::poses() const
 
 std::vector<Eigen::Matrix4f> Slam::trajectory() const
 {
-    // Key frames are refined by bundle adjustment after they were recorded
-    auto trajectory = m_trajectory;
-    for (const auto& frame : m_key_frames) {
-        if (frame->index() < trajectory.size()) {
-            trajectory[frame->index()] = frame->pose();
-        }
+    std::vector<Eigen::Matrix4f> trajectory;
+    trajectory.reserve(m_trajectory.size());
+    for (size_t i = 0; i < m_trajectory.size(); i++) {
+        trajectory.push_back(pose_at(i));
     }
     return trajectory;
 }

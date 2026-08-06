@@ -101,12 +101,10 @@ std::vector<FeatureMatch> Slam::initial_pose_estimate(Frame& frame, const std::v
 {
     if (m_config.essential_matrix_estimation || m_key_frames.size() < 2) {
         auto pose_estimate = pose::estimate_pose(m_last_frame->features(), frame.features(), matches, m_camera);
-        // Wheel odometry owns distance. Vision supplies orientation while the nonholonomic
-        // camera-forward model supplies translation direction.
         auto index = m_last_frame->index();
         if (index >= 1 && index < m_trajectory.size()) {
             float last_step =
-                (motion::camera_center(m_trajectory[index]) - motion::camera_center(m_trajectory[index - 1])).norm();
+                (motion::camera_center(pose_at(index)) - motion::camera_center(pose_at(index - 1))).norm();
             if (!m_config.metric_steps.empty()) {
                 last_step = metric_distance(index, frame.index());
             }

@@ -35,6 +35,13 @@ void Slam::triangulate_tracks(Frame& frame)
 {
     size_t created = 0;
     size_t validated = 0;
+    size_t ba_frames = 0;
+    std::unordered_set<const Frame*> ba_window;
+    size_t first = m_key_frames.size() > BA_WINDOW ? m_key_frames.size() - BA_WINDOW : 0;
+    for (size_t i = first; i < m_key_frames.size(); i++) {
+        ba_window.insert(m_key_frames[i].get());
+    }
+
     std::vector<size_t> inconsistent;
     inconsistent.reserve(m_tracks.size());
     for (const auto& [keypoint_index, track] : m_tracks) {
@@ -42,9 +49,9 @@ void Slam::triangulate_tracks(Frame& frame)
             continue;
         }
         auto pixel = frame.keypoint(keypoint_index).pt;
-        auto points = triangulation::triangulate_points({track.observations.front().second},
+        auto points = triangulation::triangulate_points({track.observations.front().pixel},
                                                         {Eigen::Vector2f(pixel.x, pixel.y)},
-                                                        track.observations.front().first,
+                                                        track.observations.front().pose,
                                                         frame.pose(),
                                                         m_camera,
                                                         TRACK_MIN_PARALLAX_COSINE,
@@ -55,8 +62,9 @@ void Slam::triangulate_tracks(Frame& frame)
 
         // Check if reprojects consistently into all observed frames
         bool consistent = true;
-        for (const auto& [pose, observed] : track.observations) {
-            if ((m_camera.project(pose, points.front().position) - observed).norm() > TRACK_MAX_REPROJECTION_ERROR) {
+        for (const auto& observation : track.observations) {
+            if ((m_camera.project(observation.pose, points.front().position) - observation.pixel).norm() >
+                TRACK_MAX_REPROJECTION_ERROR) {
                 consistent = false;
                 break;
             }
@@ -67,6 +75,21 @@ void Slam::triangulate_tracks(Frame& frame)
         }
 
         auto& point = m_map.create_point(points.front().position, frame, keypoint_index);
+        for (const auto& observation : track.observations) {
+            // Only add associations with key frames in BA window to keep covisible graph small
+            if (observation.key_frame == nullptr || observation.key_frame == &frame ||
+                ba_window.find(observation.key_frame) == ba_window.end()) {
+                continue;
+            }
+            auto* observer = const_cast<Frame*>(observation.key_frame);
+            if (observer->is_matched(observation.keypoint_index) || observer->is_matched(point)) {
+                continue;
+            }
+            observer->add_map_match(MapPointMatch{point, observation.keypoint_index});
+            point.add_observation(observer, observation.keypoint_index);
+            ba_frames++;
+        }
+
         if (track.observations.size() >= 3) {
             point.set_track_consistent();
             validated++;
@@ -78,7 +101,7 @@ void Slam::triangulate_tracks(Frame& frame)
         m_tracks.erase(keypoint_index);
     }
     std::cout << "Triangulated from tracks: " << created << " of " << m_tracks.size() << " tracks, consistent "
-              << validated << ", poisoned " << inconsistent.size() << '\n';
+              << validated << ", inconsistent " << inconsistent.size() << ", key frame anchors " << ba_frames << '\n';
 }
 
 void Slam::init_key_frame(Frame& frame)
@@ -116,16 +139,16 @@ void Slam::init_key_frame(Frame& frame)
         // Build optimization config
         std::vector<optimization::FrameConfig> frame_configs;
         frame_configs.reserve(m_key_frames.size() + 1);
-        for (const auto& key_frame : m_key_frames) {
-            if (window.find(key_frame.get()) != window.end()) {
-                // Historical poses define the accepted motion chain. Moving them without a
-                // pose graph would leave adjacent non-keyframes in stale coordinate frames.
-                frame_configs.push_back({false, key_frame.get()});
-            } else if (anchors.find(key_frame.get()) != anchors.end()) {
-                frame_configs.push_back({false, key_frame.get()});
+        for (size_t i = 0; i < m_key_frames.size(); i++) {
+            auto* key_frame = m_key_frames[i].get();
+            bool fixed = i < 2; // for scale anchoring
+            if (window.find(key_frame) != window.end()) {
+                frame_configs.push_back({!fixed, key_frame, m_config.metric_steps.empty()});
+            } else if (fixed || anchors.find(key_frame) != anchors.end()) {
+                frame_configs.push_back({false, key_frame});
             }
         }
-        frame_configs.push_back({m_config.metric_steps.empty(), &frame, m_config.metric_steps.empty()});
+        frame_configs.push_back({true, &frame, m_config.metric_steps.empty()});
 
         // Step constraints
         std::vector<optimization::StepConstraint> step_constraints;
