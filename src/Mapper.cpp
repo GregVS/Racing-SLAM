@@ -52,6 +52,7 @@ const std::vector<std::shared_ptr<KeyFrame>>& Mapper::key_frames() const
 
 std::shared_ptr<KeyFrame> Mapper::insert(Frame&& frame,
                                          TrackStore& tracks,
+                                         const Trajectory& trajectory,
                                          const Frame& last_frame,
                                          FrameDiagnostics& diagnostics)
 {
@@ -62,7 +63,7 @@ std::shared_ptr<KeyFrame> Mapper::insert(Frame&& frame,
     }
 
     if (m_config.triangulate_points) {
-        time_it("Triangulate tracks", [&]() { triangulate_tracks(*key_frame, tracks, diagnostics); });
+        time_it("Triangulate tracks", [&]() { triangulate_tracks(*key_frame, tracks, trajectory, diagnostics); });
     }
     if (m_config.bundle_adjust) {
         bundle_adjust(*key_frame, last_frame);
@@ -75,7 +76,10 @@ std::shared_ptr<KeyFrame> Mapper::insert(Frame&& frame,
     return key_frame;
 }
 
-void Mapper::triangulate_tracks(KeyFrame& key_frame, TrackStore& tracks, FrameDiagnostics& diagnostics)
+void Mapper::triangulate_tracks(KeyFrame& key_frame,
+                                TrackStore& tracks,
+                                const Trajectory& trajectory,
+                                FrameDiagnostics& diagnostics)
 {
     size_t created = 0;
     size_t validated = 0;
@@ -96,7 +100,7 @@ void Mapper::triangulate_tracks(KeyFrame& key_frame, TrackStore& tracks, FrameDi
         auto pixel = key_frame.keypoint(keypoint_index).pt;
         auto points = triangulation::triangulate_points({track.sightings.front().pixel},
                                                         {Eigen::Vector2f(pixel.x, pixel.y)},
-                                                        track.sightings.front().pose,
+                                                        trajectory.pose_at(track.sightings.front().frame_index),
                                                         key_frame.pose(),
                                                         m_camera,
                                                         TRACK_MIN_PARALLAX_COSINE,
@@ -107,8 +111,8 @@ void Mapper::triangulate_tracks(KeyFrame& key_frame, TrackStore& tracks, FrameDi
 
         bool consistent = true;
         for (const auto& sighting : track.sightings) {
-            if ((m_camera.project(sighting.pose, points.front().position) - sighting.pixel).norm() >
-                TRACK_MAX_REPROJECTION_ERROR) {
+            if ((m_camera.project(trajectory.pose_at(sighting.frame_index), points.front().position) - sighting.pixel)
+                    .norm() > TRACK_MAX_REPROJECTION_ERROR) {
                 consistent = false;
                 break;
             }

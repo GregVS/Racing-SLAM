@@ -15,7 +15,7 @@ class KeyFrame;
 enum class TrackId : size_t {};
 
 struct TrackSighting {
-    Eigen::Matrix4f pose;
+    size_t frame_index = 0;
     Eigen::Vector2f pixel;
     KeyFrame* key_frame = nullptr;
     size_t keypoint_index = 0;

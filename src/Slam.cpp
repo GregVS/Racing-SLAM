@@ -64,7 +64,8 @@ bool Slam::step()
     time_it("Create key frame", [&]() {
         if (m_mapper.needs_key_frame(*frame)) {
             std::cout << "Adding key frame after " << frame->index() - last_key_frame->index() << " frames\n";
-            promoted = m_mapper.insert(std::move(*frame), m_tracker.tracks(), m_tracker.last_frame(), m_diagnostics);
+            promoted = m_mapper.insert(
+                std::move(*frame), m_tracker.tracks(), m_trajectory, m_tracker.last_frame(), m_diagnostics);
             frame = promoted;
         }
     });

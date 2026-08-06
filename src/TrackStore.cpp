@@ -48,7 +48,7 @@ void TrackStore::extend(const Frame& frame, KeyFrame* key_frame, size_t max_sigh
         auto& sightings = m_tracks.at(existing->second).sightings;
         if (sightings.size() < max_sightings) {
             auto pixel = frame.keypoint(i).pt;
-            sightings.push_back({frame.pose(), Eigen::Vector2f(pixel.x, pixel.y), key_frame, i});
+            sightings.push_back({frame.index(), Eigen::Vector2f(pixel.x, pixel.y), key_frame, i});
         }
     }
 }

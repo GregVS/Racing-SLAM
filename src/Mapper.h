@@ -6,6 +6,7 @@
 #include "Camera.h"
 #include "Map.h"
 #include "TrackStore.h"
+#include "Trajectory.h"
 
 namespace slam {
 
@@ -25,6 +26,7 @@ class Mapper {
     /** Promotes the frame, triangulates the tracks it closes, bundle adjusts and culls */
     std::shared_ptr<KeyFrame> insert(Frame&& frame,
                                      TrackStore& tracks,
+                                     const Trajectory& trajectory,
                                      const Frame& last_frame,
                                      FrameDiagnostics& diagnostics);
 
@@ -33,7 +35,10 @@ class Mapper {
     const std::vector<std::shared_ptr<KeyFrame>>& key_frames() const;
 
   private:
-    void triangulate_tracks(KeyFrame& key_frame, TrackStore& tracks, FrameDiagnostics& diagnostics);
+    void triangulate_tracks(KeyFrame& key_frame,
+                            TrackStore& tracks,
+                            const Trajectory& trajectory,
+                            FrameDiagnostics& diagnostics);
     void bundle_adjust(KeyFrame& key_frame, const Frame& last_frame);
     void cull_points(FrameDiagnostics& diagnostics);
 
