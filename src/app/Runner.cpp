@@ -12,7 +12,7 @@
 #include "../Camera.h"
 #include "../Frame.h"
 #include "../Slam.h"
-#include "../Trajectory.h"
+#include "../TrajectoryIO.h"
 #include "../Visualization.h"
 #include "../features/OrbFeatureExtractor.h"
 

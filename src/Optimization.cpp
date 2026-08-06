@@ -104,6 +104,32 @@ static Eigen::Vector3f matrix_to_rodrigues(const Eigen::Matrix3f& R)
 
 namespace slam::optimization {
 
+Snapshot::Snapshot(const OptimizationConfig& config, Map& map, bool include_points)
+{
+    m_poses.reserve(config.frames.size());
+    for (const auto& frame_config : config.frames) {
+        if (frame_config.optimize) {
+            m_poses.push_back({frame_config.frame, frame_config.frame->pose()});
+        }
+    }
+    if (include_points) {
+        m_positions.reserve(map.size());
+        for (auto& point : map) {
+            m_positions.push_back({&point, point.position()});
+        }
+    }
+}
+
+void Snapshot::restore() const
+{
+    for (const auto& [frame, pose] : m_poses) {
+        frame->set_pose(pose);
+    }
+    for (const auto& [point, position] : m_positions) {
+        point->set_position(position);
+    }
+}
+
 bool optimize(const OptimizationConfig& config, const Camera& camera, Map& map)
 {
     auto problem = ceres::Problem();

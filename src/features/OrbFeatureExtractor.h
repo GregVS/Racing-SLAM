@@ -11,7 +11,6 @@ class OrbFeatureExtractor : public BaseFeatureExtractor {
     cv::Mat refresh_descriptors(const cv::Mat& image,
                                 const ExtractedFeatures& features) const override;
 
-  protected:
     float max_distance() const override
     {
         return 64;

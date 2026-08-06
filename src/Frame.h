@@ -41,14 +41,16 @@ class Frame {
     void set_pose(const Eigen::Matrix4f& pose);
 
     void add_map_match(const MapPointMatch& match);
-    void remove_map_match(const MapPointMatch& match);
-    const MapPoint& map_match(size_t index) const;
+    MapPoint& map_match(size_t index) const;
     bool is_matched(size_t keypoint_index) const;
     bool is_matched(const MapPoint& point) const;
     size_t num_map_matches() const;
     MapPointIterator map_matches() const;
 
   private:
+    friend class Map;
+    void remove_map_match(const MapPointMatch& match);
+
     size_t m_index;
     cv::Mat m_image;
     Eigen::Matrix4f m_pose;
@@ -56,8 +58,15 @@ class Frame {
     ExtractedFeatures m_features;
     KDTree2D m_kd_tree;
 
-    std::vector<const MapPoint*> m_map_matches;
+    std::vector<MapPoint*> m_map_matches;
     std::unordered_set<const MapPoint*> m_matched_map_points;
+    size_t m_num_map_matches = 0;
+};
+
+/** A frame promoted into the map. Only key frames observe map points. */
+class KeyFrame : public Frame {
+  public:
+    explicit KeyFrame(Frame&& frame);
 };
 
 } // namespace slam

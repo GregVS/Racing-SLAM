@@ -10,6 +10,15 @@ Eigen::Vector3f camera_center(const Eigen::Matrix4f& pose)
     return -pose.block<3, 3>(0, 0).transpose() * pose.block<3, 1>(0, 3);
 }
 
+float metric_distance(const std::vector<float>& steps, size_t from, size_t to)
+{
+    float distance = 0;
+    for (size_t i = from; i < to && i < steps.size(); i++) {
+        distance += steps[i];
+    }
+    return distance;
+}
+
 float rotation_difference_degrees(const Eigen::Matrix4f& a, const Eigen::Matrix4f& b)
 {
     Eigen::Matrix3f relative = a.block<3, 3>(0, 0) * b.block<3, 3>(0, 0).transpose();

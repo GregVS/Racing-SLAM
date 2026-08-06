@@ -33,7 +33,7 @@ struct FilteredMatches {
 };
 
 struct MapPointMatch {
-    const MapPoint& point;
+    MapPoint& point;
     size_t keypoint_index;
 };
 } // namespace slam
@@ -50,13 +50,6 @@ class BaseFeatureExtractor {
     virtual std::vector<FeatureMatch> match_features(const ExtractedFeatures& prev_features,
                                                      const ExtractedFeatures& features) const;
 
-    virtual std::vector<MapPointMatch>
-    match_features(const Frame& frame,
-                   const Camera& camera,
-                   const Map& map,
-                   std::function<bool(const MapPoint&)> point_filter) const;
-
-  protected:
     virtual float max_distance() const = 0;
     virtual cv::NormTypes norm_type() const = 0;
 };

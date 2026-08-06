@@ -1,8 +1,10 @@
-#include "Slam.h"
+#include "Initialization.h"
 
 #include <algorithm>
 
 #include "Frame.h"
+#include "Slam.h"
+#include "MotionModel.h"
 #include "Optimization.h"
 #include "PoseEstimation.h"
 #include "Triangulation.h"
@@ -28,15 +30,21 @@ cv::Mat to_gray(const cv::Mat& image)
 
 } // namespace
 
-void Slam::initialize()
+InitializationResult initialize_map(VideoLoader& video_loader,
+                                    const Camera& camera,
+                                    const cv::Mat& static_mask,
+                                    const features::BaseFeatureExtractor& feature_extractor,
+                                    const SlamConfig& config,
+                                    Map& map)
 {
-    auto anchor_image = m_video_loader.get_next_frame();
+    size_t next_index = 0;
+    auto anchor_image = video_loader.get_next_frame();
     if (anchor_image.empty()) {
         std::cout << "Initialization failed\n";
-        return;
+        return {};
     }
-    auto anchor_features = m_feature_extractor->extract_features(anchor_image, m_static_mask);
-    size_t anchor_index = m_frame_index++;
+    auto anchor_features = feature_extractor.extract_features(anchor_image, static_mask);
+    size_t anchor_index = next_index++;
 
     std::vector<std::vector<cv::Point2f>> chains(anchor_features.keypoints.size());
     std::vector<cv::Point2f> current;
@@ -50,17 +58,17 @@ void Slam::initialize()
     }
 
     cv::Mat previous_gray = to_gray(anchor_image);
-    std::shared_ptr<Frame> ref_frame;
-    std::shared_ptr<Frame> query_frame;
+    std::shared_ptr<KeyFrame> ref_frame;
+    std::shared_ptr<KeyFrame> query_frame;
     std::vector<FeatureMatch> accepted_matches;
 
     while (true) {
-        auto image = m_video_loader.get_next_frame();
+        auto image = video_loader.get_next_frame();
         if (image.empty()) {
             std::cout << "Initialization failed\n";
-            return;
+            return {};
         }
-        size_t frame_index = m_frame_index++;
+        size_t frame_index = next_index++;
         cv::Mat gray = to_gray(image);
 
         std::vector<cv::Point2f> next;
@@ -93,7 +101,7 @@ void Slam::initialize()
         // A starved or overlong epoch re-anchors on the current frame
         if (origin.size() < 200 || span > 30) {
             std::cout << "Init epoch restarted at frame " << frame_index << '\n';
-            anchor_features = m_feature_extractor->extract_features(image, m_static_mask);
+            anchor_features = feature_extractor.extract_features(image, static_mask);
             anchor_image = image;
             anchor_index = frame_index;
             chains.assign(anchor_features.keypoints.size(), {});
@@ -131,7 +139,7 @@ void Slam::initialize()
             current_features.keypoints.push_back(keypoint);
             current_features.descriptors.push_back(anchor_features.descriptors.row(origin[i]));
         }
-        auto pose_estimate = pose::estimate_pose(anchor_features, current_features, chain_matches, m_camera);
+        auto pose_estimate = pose::estimate_pose(anchor_features, current_features, chain_matches, camera);
         std::vector<Eigen::Vector2f> anchor_points;
         std::vector<Eigen::Vector2f> current_points;
         anchor_points.reserve(pose_estimate.inlier_matches.size());
@@ -143,7 +151,7 @@ void Slam::initialize()
             current_points.emplace_back(c.x, c.y);
         }
         auto candidates = triangulation::triangulate_points(
-            anchor_points, current_points, Eigen::Matrix4f::Identity(), pose_estimate.pose, m_camera);
+            anchor_points, current_points, Eigen::Matrix4f::Identity(), pose_estimate.pose, camera);
         if (candidates.size() < 100) {
             continue;
         }
@@ -167,7 +175,7 @@ void Slam::initialize()
             continue;
         }
         cv::Mat intrinsics;
-        cv_utils::intrinsic_mat_cv(m_camera).convertTo(intrinsics, CV_64F);
+        cv_utils::intrinsic_mat_cv(camera).convertTo(intrinsics, CV_64F);
         cv::Mat rvec;
         cv::Mat tvec;
         cv::Mat inliers;
@@ -190,34 +198,34 @@ void Slam::initialize()
             continue;
         }
 
-        ref_frame = std::make_shared<Frame>(
-            static_cast<int>(anchor_index), anchor_image, anchor_features);
+        ref_frame =
+            std::make_shared<KeyFrame>(Frame(static_cast<int>(anchor_index), anchor_image, anchor_features));
         query_frame =
-            std::make_shared<Frame>(static_cast<int>(frame_index), image, current_features);
+            std::make_shared<KeyFrame>(Frame(static_cast<int>(frame_index), image, current_features));
         query_frame->set_pose(pose_estimate.pose);
         accepted_matches = pose_estimate.inlier_matches;
         break;
     }
 
     std::cout << "Initializing frames: " << ref_frame->index() << " and " << query_frame->index() << '\n';
-    auto points = triangulation::triangulate_points(*ref_frame, *query_frame, accepted_matches, m_camera);
+    auto points = triangulation::triangulate_points(*ref_frame, *query_frame, accepted_matches, camera);
 
     // Add points to map
     for (size_t i = 0; i < points.size(); i++) {
         auto match = accepted_matches[points[i].match_index];
-        m_map.create_point(points[i].position, *ref_frame, *query_frame, match);
+        map.create_point(points[i].position, *ref_frame, *query_frame, match);
     }
     std::cout << "Number of triangulated points: " << points.size() << '\n';
 
     // Bundle adjustment
     {
-        auto config = optimization::OptimizationConfig{
+        auto ba_config = optimization::OptimizationConfig{
             .optimize_points = true,
             .frames = {{false, ref_frame.get()}, {true, query_frame.get()}},
         };
-        optimization::optimize(config, m_camera, m_map);
+        optimization::optimize(ba_config, camera, map);
 
-        float target = m_config.metric_steps.empty() ? 1.0F : metric_distance(ref_frame->index(), query_frame->index());
+        float target = config.metric_steps.empty() ? 1.0F : motion::metric_distance(config.metric_steps, ref_frame->index(), query_frame->index());
         float scale =
             target / (query_frame->pose().block<3, 1>(0, 3) - ref_frame->pose().block<3, 1>(0, 3)).stableNorm();
         std::cout << "Scale: " << scale << '\n';
@@ -225,18 +233,12 @@ void Slam::initialize()
         auto scaled_pose = query_frame->pose();
         scaled_pose.block<3, 1>(0, 3) = query_frame->pose().block<3, 1>(0, 3) * scale;
         query_frame->set_pose(scaled_pose);
-        for (auto& point : m_map) {
+        for (auto& point : map) {
             point.set_position(point.position() * scale);
         }
     }
 
-    // Add frames to key frames
-    m_key_frames.push_back(ref_frame);
-    m_key_frames.push_back(query_frame);
-    m_last_frame = query_frame;
-
-    record_pose(*ref_frame);
-    record_pose(*query_frame);
+    return {ref_frame, query_frame, next_index};
 }
 
 } // namespace slam

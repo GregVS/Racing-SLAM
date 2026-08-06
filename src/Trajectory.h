@@ -1,14 +1,27 @@
 #pragma once
 
 #include <Eigen/Dense>
-#include <string>
 #include <vector>
 
-namespace slam::trajectory {
+namespace slam {
 
-/** Writes camera-to-world poses in KITTI odometry format: one frame per line, 12 space
- * separated values, the 3x4 pose matrix in row-major order. Takes world-to-camera poses and
- * inverts them. Returns false if the file could not be opened. */
-bool write_kitti(const std::string& filename, const std::vector<Eigen::Matrix4f>& poses);
+class Frame;
 
-} // namespace slam::trajectory
+class Trajectory {
+  public:
+    void record(const Frame& frame, const Frame* reference);
+
+    Eigen::Matrix4f pose_at(size_t index) const;
+    size_t size() const;
+    std::vector<Eigen::Matrix4f> poses() const;
+
+  private:
+    struct Entry {
+        const Frame* reference = nullptr; // null before the first key frame exists
+        Eigen::Matrix4f relative = Eigen::Matrix4f::Identity();
+    };
+
+    std::vector<Entry> m_entries;
+};
+
+} // namespace slam

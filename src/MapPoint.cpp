@@ -2,7 +2,7 @@
 
 #include "Frame.h"
 
-using slam::Frame;
+using slam::KeyFrame;
 using slam::MapPoint;
 
 MapPoint::MapPoint(const Eigen::Vector3f& position) : m_position(position), m_color(255, 255, 255)
@@ -30,17 +30,22 @@ Eigen::Vector3f MapPoint::avg_viewing_normal() const
     return normal.normalized();
 }
 
-void MapPoint::add_observation(const Frame* key_frame, size_t index)
+void MapPoint::add_observation(KeyFrame* key_frame, size_t index)
 {
     m_observations[key_frame] = index;
 }
 
-const std::unordered_map<const Frame*, size_t>& MapPoint::observations() const
+void MapPoint::remove_observation(KeyFrame* key_frame)
+{
+    m_observations.erase(key_frame);
+}
+
+const std::unordered_map<KeyFrame*, size_t>& MapPoint::observations() const
 {
     return m_observations;
 }
 
-bool MapPoint::is_observed_by(const Frame* key_frame) const
+bool MapPoint::is_observed_by(KeyFrame* key_frame) const
 {
     return m_observations.find(key_frame) != m_observations.end();
 }

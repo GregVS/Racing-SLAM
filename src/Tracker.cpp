@@ -1,9 +1,11 @@
-#include "Slam.h"
+#include "Tracker.h"
 
 #include "Frame.h"
+#include "Helpers.h"
 #include "MotionModel.h"
 #include "Optimization.h"
 #include "PoseEstimation.h"
+#include "Slam.h"
 #include "YawEstimation.h"
 #include "features/FeatureExtractor.h"
 
@@ -30,7 +32,59 @@ cv::Mat to_gray(const cv::Mat& image)
 
 } // namespace
 
-std::pair<ExtractedFeatures, std::vector<FeatureMatch>> Slam::track_features(const cv::Mat& image)
+Tracker::Tracker(const Camera& camera,
+                 const cv::Mat& static_mask,
+                 const features::BaseFeatureExtractor& feature_extractor,
+                 const SlamConfig& config,
+                 Map& map)
+    : m_camera(camera), m_static_mask(static_mask), m_feature_extractor(feature_extractor), m_config(config),
+      m_map(map), m_map_matcher(camera, feature_extractor.max_distance(), feature_extractor.norm_type())
+{
+}
+
+TrackStore& Tracker::tracks()
+{
+    return m_tracks;
+}
+
+Frame& Tracker::last_frame() const
+{
+    return *m_last_frame;
+}
+
+bool Tracker::has_last_frame() const
+{
+    return m_last_frame != nullptr;
+}
+
+void Tracker::set_last_frame(const std::shared_ptr<Frame>& frame)
+{
+    m_last_frame = frame;
+}
+
+std::shared_ptr<Frame> Tracker::track(const cv::Mat& image,
+                                      size_t frame_index,
+                                      const Trajectory& trajectory,
+                                      KeyFrame& last_key_frame,
+                                      size_t num_key_frames)
+{
+    ExtractedFeatures features;
+    std::vector<FeatureMatch> tracked;
+    time_it("Track features", [&]() { std::tie(features, tracked) = track_features(image); });
+    auto frame = std::make_shared<Frame>(frame_index, image, features);
+
+    std::vector<FeatureMatch> inlier_matches;
+    time_it("Initial pose estimation",
+            [&]() { inlier_matches = initial_pose_estimate(*frame, tracked, trajectory, num_key_frames); });
+    time_it("Update tracks", [&]() { m_tracks.carry_forward(inlier_matches); });
+    time_it("Track from last frame", [&]() { track_from_last_frame(*frame, inlier_matches); });
+    time_it("Optimize pose", [&]() { optimize_pose(*frame); });
+    time_it("Match with last key frame", [&]() { match_with_last_key_frame(*frame, last_key_frame); });
+    time_it("Match with map", [&]() { match_with_map(*frame); });
+    return frame;
+}
+
+std::pair<ExtractedFeatures, std::vector<FeatureMatch>> Tracker::track_features(const cv::Mat& image)
 {
     cv::Mat prev_gray = to_gray(m_last_frame->image());
     cv::Mat next_gray = to_gray(image);
@@ -78,7 +132,7 @@ std::pair<ExtractedFeatures, std::vector<FeatureMatch>> Slam::track_features(con
 
     // Refill where nothing is tracked so coverage does not decay as points leave the image;
     // the detector returns corners strongest first, so capping the total keeps the best
-    auto new_features = m_feature_extractor->extract_features(image, replenish_mask);
+    auto new_features = m_feature_extractor.extract_features(image, replenish_mask);
 
     size_t budget =
         features.keypoints.size() < MAX_TRACKED_FEATURES ? MAX_TRACKED_FEATURES - features.keypoints.size() : 0;
@@ -90,23 +144,28 @@ std::pair<ExtractedFeatures, std::vector<FeatureMatch>> Slam::track_features(con
 
     // Re-describe against this frame so descriptors follow the viewpoint instead of staying
     // frozen at first detection
-    features.descriptors = m_feature_extractor->refresh_descriptors(image, features);
+    features.descriptors = m_feature_extractor.refresh_descriptors(image, features);
 
     std::cout << "Tracked features: " << matches.size() << " of " << prev_points.size() << ", replenished "
               << new_features.keypoints.size() << '\n';
-    return {features, matches};
+    return {std::move(features), std::move(matches)};
 }
 
-std::vector<FeatureMatch> Slam::initial_pose_estimate(Frame& frame, const std::vector<FeatureMatch>& matches)
+std::vector<FeatureMatch> Tracker::initial_pose_estimate(Frame& frame,
+                                                         const std::vector<FeatureMatch>& matches,
+                                                         const Trajectory& trajectory,
+                                                         size_t num_key_frames)
 {
-    if (m_config.essential_matrix_estimation || m_key_frames.size() < 2) {
+    if (m_config.essential_matrix_estimation || num_key_frames < 2) {
         auto pose_estimate = pose::estimate_pose(m_last_frame->features(), frame.features(), matches, m_camera);
         auto index = m_last_frame->index();
-        if (index >= 1 && index < m_trajectory.size()) {
+        if (index >= 1 && index < trajectory.size()) {
             float last_step =
-                (motion::camera_center(pose_at(index)) - motion::camera_center(pose_at(index - 1))).norm();
+                (motion::camera_center(trajectory.pose_at(index)) -
+                 motion::camera_center(trajectory.pose_at(index - 1)))
+                    .norm();
             if (!m_config.metric_steps.empty()) {
-                last_step = metric_distance(index, frame.index());
+                last_step = motion::metric_distance(m_config.metric_steps, index, frame.index());
             }
             Eigen::Matrix4f relative = pose_estimate.pose;
             if (!m_config.metric_steps.empty()) {
@@ -148,10 +207,10 @@ std::vector<FeatureMatch> Slam::initial_pose_estimate(Frame& frame, const std::v
     return {};
 }
 
-void Slam::track_from_last_frame(Frame& frame, const std::vector<FeatureMatch>& matches)
+void Tracker::track_from_last_frame(Frame& frame, const std::vector<FeatureMatch>& matches)
 {
     // Carry over map points from the previous frame that are still visible in the current frame
-    std::vector<const MapPoint*> points;
+    std::vector<MapPoint*> points;
     std::vector<size_t> keypoint_indices;
     points.reserve(matches.size());
     keypoint_indices.reserve(matches.size());
@@ -159,7 +218,7 @@ void Slam::track_from_last_frame(Frame& frame, const std::vector<FeatureMatch>& 
         if (!m_last_frame->is_matched(match.train_index)) {
             continue;
         }
-        const auto& point = m_last_frame->map_match(match.train_index);
+        auto& point = m_last_frame->map_match(match.train_index);
         if (point.observations().size() < 2 && !point.track_consistent()) {
             continue;
         }
@@ -183,40 +242,25 @@ void Slam::track_from_last_frame(Frame& frame, const std::vector<FeatureMatch>& 
     std::cout << "Tracked from last frame: " << accepted << " / " << points.size() << '\n';
 }
 
-void Slam::update_tracks(const std::vector<FeatureMatch>& matches)
+void Tracker::match_with_last_key_frame(Frame& frame, KeyFrame& last_key_frame)
 {
-    // train_index indexes the previous frame, query_index the current one
-    std::unordered_map<size_t, FeatureTrack> carried;
-    carried.reserve(matches.size());
-    for (const auto& match : matches) {
-        auto existing = m_tracks.find(match.train_index);
-        carried[match.query_index] = existing != m_tracks.end() ? existing->second : FeatureTrack{};
-    }
-    m_tracks = std::move(carried);
-}
-
-void Slam::match_with_last_key_frame(Frame& frame)
-{
-    const auto& last_frame = m_key_frames.back();
-    auto map_matches = m_feature_extractor->match_features(
-        frame, m_camera, m_map, [&](const MapPoint& point) { return point.is_observed_by(last_frame.get()); });
+    auto map_matches = m_map_matcher.match_key_frame(frame, m_map, &last_key_frame);
     for (const auto& match : map_matches) {
         frame.add_map_match(match);
     }
     std::cout << "Map matches with last frame: " << map_matches.size() << '\n';
 }
 
-void Slam::match_with_map(Frame& frame)
+void Tracker::match_with_map(Frame& frame)
 {
-    auto map_matches =
-        m_feature_extractor->match_features(frame, m_camera, m_map, [&](const MapPoint& point) { return true; });
+    auto map_matches = m_map_matcher.match_map(frame, m_map);
     for (const auto& match : map_matches) {
         frame.add_map_match(match);
     }
     std::cout << "Number of map matches: " << map_matches.size() << '\n';
 }
 
-void Slam::optimize_pose(Frame& frame)
+void Tracker::optimize_pose(Frame& frame)
 {
     if (!m_config.optimize_pose || !m_config.metric_steps.empty()) {
         return;
@@ -226,14 +270,14 @@ void Slam::optimize_pose(Frame& frame)
     }
 
     // Motion-only BA
-    auto original_pose = frame.pose();
     auto config = optimization::OptimizationConfig{
         .optimize_points = false,
         .frames = {{true, &frame, m_config.metric_steps.empty()}},
     };
+    optimization::Snapshot snapshot(config, m_map, false);
     bool optimized = optimization::optimize(config, m_camera, m_map);
     if (!optimized || !motion::is_rotation_plausible(m_last_frame->pose(), frame.pose(), m_config.seconds_per_frame)) {
-        frame.set_pose(original_pose);
+        snapshot.restore();
         if (optimized) {
             std::cout << "Pose optimization rolled back by temporal motion bound\n";
         }

@@ -17,18 +17,12 @@ void Map::add_point(std::unique_ptr<MapPoint>&& point)
 }
 
 MapPoint& Map::create_point(const Eigen::Vector3f& position,
-                            Frame& frame1,
-                            Frame& frame2,
+                            KeyFrame& frame1,
+                            KeyFrame& frame2,
                             FeatureMatch& match)
 {
     auto point = std::make_unique<MapPoint>(position);
     auto* created = point.get();
-
-    // Add associations
-    point->add_observation(&frame1, match.train_index);
-    point->add_observation(&frame2, match.query_index);
-    frame1.add_map_match(MapPointMatch{*point, match.train_index});
-    frame2.add_map_match(MapPointMatch{*point, match.query_index});
 
     // Support for grayscale images
     auto uv = frame1.keypoint(match.train_index).pt;
@@ -42,15 +36,15 @@ MapPoint& Map::create_point(const Eigen::Vector3f& position,
 
     // Add to map
     m_points.push_back(std::move(point));
+    associate(frame1, *created, match.train_index);
+    associate(frame2, *created, match.query_index);
     return *created;
 }
 
-MapPoint& Map::create_point(const Eigen::Vector3f& position, Frame& frame, size_t keypoint_index)
+MapPoint& Map::create_point(const Eigen::Vector3f& position, KeyFrame& frame, size_t keypoint_index)
 {
     auto point = std::make_unique<MapPoint>(position);
     auto* created = point.get();
-
-    created->add_observation(&frame, keypoint_index);
 
     auto uv = frame.keypoint(keypoint_index).pt;
     if (frame.image().channels() == 1) {
@@ -62,7 +56,7 @@ MapPoint& Map::create_point(const Eigen::Vector3f& position, Frame& frame, size_
     }
 
     m_points.push_back(std::move(point));
-    frame.add_map_match(MapPointMatch{*created, keypoint_index});
+    associate(frame, *created, keypoint_index);
     return *created;
 }
 
@@ -71,7 +65,7 @@ void Map::remove_point(MapPoint* point)
     for (auto it = m_points.begin(); it != m_points.end(); ++it) {
         if (it->get() == point) {
             for (const auto& [frame, index] : (*it)->observations()) {
-                const_cast<Frame*>(frame)->remove_map_match({**it, index});
+                frame->remove_map_match({**it, index});
             }
             m_points.erase(it);
             break;
@@ -79,10 +73,20 @@ void Map::remove_point(MapPoint* point)
     }
 }
 
-void Map::add_association(Frame& frame, const MapPointMatch& match)
+void Map::associate(KeyFrame& frame, MapPoint& point, size_t keypoint_index)
 {
-    const_cast<MapPoint&>(match.point).add_observation(&frame, match.keypoint_index);
-    frame.add_map_match(match);
+    point.add_observation(&frame, keypoint_index);
+    frame.add_map_match(MapPointMatch{point, keypoint_index});
+}
+
+void Map::disassociate(KeyFrame& frame, MapPoint& point)
+{
+    auto observation = point.observations().find(&frame);
+    if (observation == point.observations().end()) {
+        return;
+    }
+    frame.remove_map_match(MapPointMatch{point, observation->second});
+    point.remove_observation(&frame);
 }
 
 size_t Map::size() const

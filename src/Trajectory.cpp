@@ -1,34 +1,38 @@
 #include "Trajectory.h"
 
-#include <fstream>
-#include <iostream>
+#include "Frame.h"
 
-namespace slam::trajectory {
+namespace slam {
 
-bool write_kitti(const std::string& filename, const std::vector<Eigen::Matrix4f>& poses)
+void Trajectory::record(const Frame& frame, const Frame* reference)
 {
-    std::ofstream file(filename);
-    if (!file) {
-        std::cerr << "Failed to open trajectory file: " << filename << std::endl;
-        return false;
-    }
+    // Frames dropped during initialization keep the previous pose, so indexing stays by frame index
+    auto fill = m_entries.empty() ? Entry{} : m_entries.back();
+    m_entries.resize(frame.index() + 1, fill);
 
-    for (const auto& pose : poses) {
-        // KITTI ground truth is camera-to-world, our poses are world-to-camera
-        Eigen::Matrix3f rotation = pose.block<3, 3>(0, 0).transpose();
-        Eigen::Vector3f translation = -rotation * pose.block<3, 1>(0, 3);
-
-        for (int i = 0; i < 3; i++) {
-            for (int j = 0; j < 3; j++) {
-                file << rotation(i, j) << " ";
-            }
-            file << translation(i);
-            file << (i < 2 ? " " : "\n");
-        }
-    }
-
-    std::cout << "Wrote " << poses.size() << " poses to " << filename << std::endl;
-    return true;
+    // World to camera, so relative to the reference is Tcr = Tcw * Twr
+    m_entries[frame.index()] = {reference, reference ? frame.pose() * reference->pose().inverse() : frame.pose()};
 }
 
-} // namespace slam::trajectory
+Eigen::Matrix4f Trajectory::pose_at(size_t index) const
+{
+    const auto& entry = m_entries[index];
+    return entry.reference ? entry.relative * entry.reference->pose() : entry.relative;
+}
+
+size_t Trajectory::size() const
+{
+    return m_entries.size();
+}
+
+std::vector<Eigen::Matrix4f> Trajectory::poses() const
+{
+    std::vector<Eigen::Matrix4f> poses;
+    poses.reserve(m_entries.size());
+    for (size_t i = 0; i < m_entries.size(); i++) {
+        poses.push_back(pose_at(i));
+    }
+    return poses;
+}
+
+} // namespace slam

@@ -8,7 +8,6 @@ class DeepFeatureExtractor : public BaseFeatureExtractor {
   public:
     ExtractedFeatures extract_features(const cv::Mat& image, const cv::Mat& mask) const override;
 
-  protected:
     float max_distance() const override
     {
         return 0.7;

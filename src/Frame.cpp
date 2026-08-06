@@ -14,6 +14,8 @@ Frame::Frame(int index, const cv::Mat& image, const ExtractedFeatures& features)
     m_map_matches.resize(m_features.keypoints.size(), nullptr);
 }
 
+KeyFrame::KeyFrame(Frame&& frame) : Frame(std::move(frame)) {}
+
 size_t Frame::index() const
 {
     return m_index;
@@ -46,26 +48,30 @@ void Frame::set_pose(const Eigen::Matrix4f& pose)
 
 void Frame::add_map_match(const MapPointMatch& match)
 {
+    if (m_map_matches[match.keypoint_index] == nullptr) {
+        m_num_map_matches++;
+    }
     m_map_matches[match.keypoint_index] = &match.point;
     m_matched_map_points.insert(&match.point);
 }
 
 void Frame::remove_map_match(const MapPointMatch& match)
 {
+    if (m_map_matches[match.keypoint_index] != nullptr) {
+        m_num_map_matches--;
+    }
     m_map_matches[match.keypoint_index] = nullptr;
     m_matched_map_points.erase(&match.point);
 }
 
-const MapPoint& Frame::map_match(size_t index) const
+MapPoint& Frame::map_match(size_t index) const
 {
     return *m_map_matches[index];
 }
 
 size_t Frame::num_map_matches() const
 {
-    return std::count_if(m_map_matches.begin(), m_map_matches.end(), [](const MapPoint* point) {
-        return point != nullptr;
-    });
+    return m_num_map_matches;
 }
 
 const cv::Mat Frame::descriptor(size_t index) const

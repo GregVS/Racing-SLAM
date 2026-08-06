@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Eigen/Dense>
+#include <vector>
 
 namespace slam::motion {
 
@@ -8,6 +9,9 @@ namespace slam::motion {
 constexpr float MAX_ANGULAR_SPEED_DEGREES = 120.0F;
 
 Eigen::Vector3f camera_center(const Eigen::Matrix4f& pose);
+
+/** Distance travelled between two frame indices according to per-frame wheel odometry steps. */
+float metric_distance(const std::vector<float>& steps, size_t from, size_t to);
 
 float rotation_difference_degrees(const Eigen::Matrix4f& a, const Eigen::Matrix4f& b);
 
