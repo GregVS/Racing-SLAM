@@ -35,6 +35,9 @@ class Mapper {
     const std::vector<std::shared_ptr<KeyFrame>>& key_frames() const;
 
   private:
+    /** Numbers of covisible points with the last key frame */
+    size_t covisible_points(const Frame& frame) const;
+
     void triangulate_tracks(KeyFrame& key_frame,
                             TrackStore& tracks,
                             const Trajectory& trajectory,

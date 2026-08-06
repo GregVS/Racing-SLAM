@@ -14,9 +14,11 @@ namespace slam {
 
 namespace {
 
-constexpr size_t BA_WINDOW = 10;
 constexpr size_t MAX_KEY_FRAME_GAP = 20;
-constexpr size_t MIN_TRACKED_POINTS = 50;
+constexpr size_t MIN_COVISIBLE_POINTS = 50;
+constexpr float MIN_COVISIBLE_FRACTION = 0.7F;
+
+constexpr size_t BA_WINDOW = MAX_KEY_FRAME_GAP; // Must be at least MAX_KEY_FRAME_GAP
 constexpr float TRACK_MIN_PARALLAX_COSINE = 0.999848F;
 constexpr float TRACK_MAX_REPROJECTION_ERROR = 4.0F;
 constexpr float MAX_POINT_REPROJECTION_ERROR = 3.0F;
@@ -28,16 +30,31 @@ Mapper::Mapper(const Camera& camera, const SlamConfig& config, Map& map)
 {
 }
 
+size_t Mapper::covisible_points(const Frame& frame) const
+{
+    auto* reference = m_key_frames.back().get();
+    size_t covisible = 0;
+    for (const auto& match : frame.map_matches()) {
+        if (match.point.is_observed_by(reference)) {
+            covisible++;
+        }
+    }
+    return covisible;
+}
+
 bool Mapper::needs_key_frame(const Frame& frame) const
 {
     const auto& last_key_frame = *m_key_frames.back();
-    if (frame.num_map_matches() < MIN_TRACKED_POINTS) {
+    size_t gap = frame.index() - last_key_frame.index();
+    if (gap >= MAX_KEY_FRAME_GAP) {
         return true;
     }
 
-    size_t gap = frame.index() - last_key_frame.index();
-    return gap >= MAX_KEY_FRAME_GAP ||
-           static_cast<float>(frame.num_map_matches()) < 0.9F * static_cast<float>(last_key_frame.num_map_matches());
+    size_t covisible = covisible_points(frame);
+    std::cout << "Covisible with last key frame: " << covisible << " of " << frame.num_map_matches() << '\n';
+    return covisible < MIN_COVISIBLE_POINTS ||
+           static_cast<float>(covisible) <
+               MIN_COVISIBLE_FRACTION * static_cast<float>(last_key_frame.num_map_matches());
 }
 
 void Mapper::adopt(const std::shared_ptr<KeyFrame>& key_frame)
