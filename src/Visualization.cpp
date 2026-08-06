@@ -10,10 +10,8 @@ Visualization::Visualization(const std::string& window_name) : m_window_name(win
 
 Visualization::~Visualization()
 {
-    if (m_camera_state)
-        delete m_camera_state;
-    if (m_handler)
-        delete m_handler;
+    delete m_camera_state;
+    delete m_handler;
     // m_display should be deleted by Pangolin
 }
 
@@ -51,33 +49,76 @@ void Visualization::run_threaded()
     std::thread([this]() { run(); }).detach();
 }
 
-void Visualization::set_image(const cv::Mat& image)
+void Visualization::push_frame(size_t frame_index,
+                               const cv::Mat& image,
+                               const std::vector<Eigen::Matrix4f>& poses,
+                               const std::vector<Point>& points,
+                               const std::vector<Eigen::Vector3f>& culled,
+                               const std::string& status)
 {
+    Snapshot snapshot;
+    snapshot.frame_index = frame_index;
+    cv::cvtColor(image, snapshot.image, cv::COLOR_BGR2RGB);
+    snapshot.poses = poses;
+    snapshot.points = points;
+    snapshot.culled = culled;
+    snapshot.status = status;
+
     std::lock_guard<std::mutex> lock(m_render_lock);
-    cv::cvtColor(image, m_image, cv::COLOR_BGR2RGB);
-    m_image_texture = nullptr;
+    m_history.push_back(std::move(snapshot));
+    while (m_history.size() > MAX_HISTORY) {
+        m_history.pop_front();
+        if (m_view_offset > 0 && m_view_offset >= m_history.size()) {
+            m_view_offset = m_history.size() - 1;
+        }
+    }
+    m_texture_stale = true;
 }
 
-void Visualization::set_camera_poses(const std::vector<Eigen::Matrix4f>& poses)
+void Visualization::step_view(int delta)
 {
-    std::lock_guard<std::mutex> lock(m_render_lock);
-    m_poses = poses;
+    {
+        std::lock_guard<std::mutex> lock(m_render_lock);
+        if (delta < 0) {
+            if (m_view_offset + 1 < m_history.size()) {
+                m_view_offset++;
+                m_texture_stale = true;
+            }
+            return;
+        }
+        if (m_view_offset > 0) {
+            m_view_offset--;
+            m_texture_stale = true;
+            return;
+        }
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_step_mutex);
+        m_step_requested = true;
+    }
+    m_step_cv.notify_all();
 }
 
-void Visualization::set_points(const std::vector<Point>& points)
+void Visualization::toggle_pause()
 {
-    std::lock_guard<std::mutex> lock(m_render_lock);
-    m_points = points;
+    {
+        std::lock_guard<std::mutex> lock(m_step_mutex);
+        m_paused = !m_paused;
+    }
+    m_step_cv.notify_all();
 }
 
-void Visualization::set_pause_callback(std::function<void()> callback)
+bool Visualization::wait_for_step()
 {
-    m_pause_callback = callback;
+    std::unique_lock<std::mutex> lock(m_step_mutex);
+    m_step_cv.wait(lock, [this]() { return !m_paused || m_step_requested || m_has_quit; });
+    m_step_requested = false;
+    return !m_has_quit;
 }
 
-void Visualization::draw_camera_poses()
+void Visualization::draw_camera_poses(const Snapshot& snapshot)
 {
-    for (const auto& pose : m_poses) {
+    for (const auto& pose : snapshot.poses) {
         const float camera_size = 1.5f;
         const Eigen::Matrix4f inverse_pose = pose.inverse();
 
@@ -95,31 +136,55 @@ void Visualization::draw_camera_poses()
     }
 }
 
-void Visualization::draw_points()
+void Visualization::draw_points(const Snapshot& snapshot)
 {
     glPointSize(3);
     glBegin(GL_POINTS);
-    for (const auto& point : m_points) {
+    for (const auto& point : snapshot.points) {
         glColor3ub(point.color[0], point.color[1], point.color[2]);
         glVertex3f(point.position[0], point.position[1], point.position[2]);
     }
     glEnd();
+
+    glPointSize(6);
+    glBegin(GL_POINTS);
+    glColor3ub(255, 0, 0);
+    for (const auto& position : snapshot.culled) {
+        glVertex3f(position[0], position[1], position[2]);
+    }
+    glEnd();
 }
 
-void Visualization::draw_image()
+void Visualization::draw_image(const Snapshot& snapshot)
 {
     m_image_display->Activate();
-    if (!m_image.empty()) {
-        if (!m_image_texture) {
-            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-            m_image_texture = std::make_unique<pangolin::GlTexture>(
-                m_image.cols, m_image.rows, GL_RGB, true, 0, GL_RGB, GL_UNSIGNED_BYTE);
-            m_image_texture->Upload(m_image.data, GL_RGB, GL_UNSIGNED_BYTE);
-        }
-
-        glColor3f(1.0f, 1.0f, 1.0f);
-        m_image_texture->RenderToViewport(true);
+    if (snapshot.image.empty()) {
+        return;
     }
+
+    cv::Mat labelled = snapshot.image.clone();
+    std::string label = "frame " + std::to_string(snapshot.frame_index);
+    if (m_view_offset > 0) {
+        label += " [replay -" + std::to_string(m_view_offset) + "]";
+    } else if (m_paused) {
+        label += " [paused]";
+    }
+    cv::putText(labelled, label, cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(255, 255, 255), 2);
+    if (!snapshot.status.empty()) {
+        auto colour = snapshot.culled.empty() ? cv::Scalar(255, 255, 255) : cv::Scalar(255, 80, 80);
+        cv::putText(labelled, snapshot.status, cv::Point(10, 58), cv::FONT_HERSHEY_SIMPLEX, 0.6, colour, 2);
+    }
+
+    if (!m_image_texture || m_texture_stale) {
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        m_image_texture = std::make_unique<pangolin::GlTexture>(
+            labelled.cols, labelled.rows, GL_RGB, true, 0, GL_RGB, GL_UNSIGNED_BYTE);
+        m_texture_stale = false;
+    }
+    m_image_texture->Upload(labelled.data, GL_RGB, GL_UNSIGNED_BYTE);
+
+    glColor3f(1.0f, 1.0f, 1.0f);
+    m_image_texture->RenderToViewport(true);
 }
 
 void Visualization::run()
@@ -134,10 +199,23 @@ void Visualization::run()
         m_key_pressed_cv.notify_all();
     });
 
-    pangolin::RegisterKeyPressCallback('p', [this]() {
-        if (m_pause_callback) {
-            m_pause_callback();
-        }
+    pangolin::RegisterKeyPressCallback('p', [this]() { toggle_pause(); });
+    pangolin::RegisterKeyPressCallback(' ', [this]() { toggle_pause(); });
+    pangolin::RegisterKeyPressCallback(pangolin::PANGO_SPECIAL + pangolin::PANGO_KEY_RIGHT, [this]() {
+        m_paused = true;
+        step_view(1);
+    });
+    pangolin::RegisterKeyPressCallback(pangolin::PANGO_SPECIAL + pangolin::PANGO_KEY_LEFT, [this]() {
+        m_paused = true;
+        step_view(-1);
+    });
+    pangolin::RegisterKeyPressCallback('.', [this]() {
+        m_paused = true;
+        step_view(1);
+    });
+    pangolin::RegisterKeyPressCallback(',', [this]() {
+        m_paused = true;
+        step_view(-1);
     });
 
     while (!pangolin::ShouldQuit()) {
@@ -151,9 +229,12 @@ void Visualization::run()
 
         {
             std::lock_guard<std::mutex> lock(m_render_lock);
-            draw_camera_poses();
-            draw_points();
-            draw_image();
+            if (!m_history.empty()) {
+                const Snapshot& snapshot = m_history[m_history.size() - 1 - m_view_offset];
+                draw_camera_poses(snapshot);
+                draw_points(snapshot);
+                draw_image(snapshot);
+            }
         }
 
         pangolin::FinishFrame();
@@ -165,6 +246,7 @@ void Visualization::run()
         m_key_pressed_cv.notify_all();
     }
     m_has_quit = true;
+    m_step_cv.notify_all();
 }
 
 } // namespace slam
