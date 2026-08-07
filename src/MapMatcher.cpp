@@ -11,6 +11,10 @@ namespace {
 constexpr float SEARCH_RADIUS = 20.0F;
 constexpr float MIN_VIEWING_ANGLE_COSINE = 0.5F;
 
+// Used to filter out matches that are too close or too far away
+constexpr float MAX_NEARER_RATIO = 2.0F;
+constexpr float MAX_FURTHER_RATIO = 1.25F;
+
 } // namespace
 
 MapMatcher::MapMatcher(const Camera& camera, float max_descriptor_distance, cv::NormTypes norm_type)
@@ -51,9 +55,16 @@ std::vector<MapPointMatch> MapMatcher::match(const Frame& frame, Map& map, KeyFr
             continue;
         }
 
+        auto ray = point.position() - frame.camera_center();
         auto viewing_normal = point.avg_viewing_normal();
-        auto viewing_direction = (point.position() - frame.camera_center()).normalized();
-        if (viewing_normal.dot(viewing_direction) < MIN_VIEWING_ANGLE_COSINE) {
+        if (viewing_normal.dot(ray.normalized()) < MIN_VIEWING_ANGLE_COSINE) {
+            continue;
+        }
+
+        // Only match points that were observed from a similar distance
+        auto [nearest, furthest] = point.observed_distance_range();
+        float distance = ray.norm();
+        if (distance < nearest / MAX_NEARER_RATIO || distance > furthest * MAX_FURTHER_RATIO) {
             continue;
         }
 

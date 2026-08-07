@@ -1,5 +1,7 @@
 #include "MapPoint.h"
 
+#include <limits>
+
 #include "Frame.h"
 
 using slam::KeyFrame;
@@ -28,6 +30,18 @@ Eigen::Vector3f MapPoint::avg_viewing_normal() const
         normal += v.normalized();
     }
     return normal.normalized();
+}
+
+std::pair<float, float> MapPoint::observed_distance_range() const
+{
+    float nearest = std::numeric_limits<float>::max();
+    float furthest = 0.0F;
+    for (const auto& [frame, index] : m_observations) {
+        float distance = (m_position - frame->camera_center()).norm();
+        nearest = std::min(nearest, distance);
+        furthest = std::max(furthest, distance);
+    }
+    return {nearest, furthest};
 }
 
 void MapPoint::add_observation(KeyFrame* key_frame, size_t index)

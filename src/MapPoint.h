@@ -3,6 +3,7 @@
 #include <Eigen/Dense>
 #include <opencv2/opencv.hpp>
 #include <unordered_map>
+#include <utility>
 
 namespace slam {
 
@@ -15,6 +16,7 @@ class MapPoint {
     const Eigen::Vector3f& position() const;
     void set_position(const Eigen::Vector3f& position);
     Eigen::Vector3f avg_viewing_normal() const;
+    std::pair<float, float> observed_distance_range() const;
 
     const std::unordered_map<KeyFrame*, size_t>& observations() const;
     bool is_observed_by(KeyFrame* key_frame) const;
