@@ -1,5 +1,7 @@
 #include "Mapper.h"
 
+#include <algorithm>
+#include <cmath>
 #include <unordered_set>
 
 #include "Frame.h"
@@ -19,7 +21,11 @@ constexpr size_t MIN_COVISIBLE_POINTS = 50;
 constexpr float MIN_COVISIBLE_FRACTION = 0.7F;
 
 constexpr size_t BA_WINDOW = MAX_KEY_FRAME_GAP; // Must be at least MAX_KEY_FRAME_GAP
-constexpr float TRACK_MIN_PARALLAX_COSINE = 0.999848F;
+
+// Used for adaptive parallax threshold based on rotation
+constexpr float TRACK_MIN_PARALLAX_COSINE = 0.999848F; // 1 degree
+constexpr float ROTATION_PARALLAX_FACTOR = 0.20F;
+
 constexpr float TRACK_MAX_REPROJECTION_ERROR = 4.0F;
 constexpr float MAX_POINT_REPROJECTION_ERROR = 3.0F;
 
@@ -115,12 +121,16 @@ void Mapper::triangulate_tracks(KeyFrame& key_frame,
             continue;
         }
         auto pixel = key_frame.keypoint(keypoint_index).pt;
+        auto first_pose = trajectory.pose_at(track.sightings.front().frame_index);
+        Eigen::Matrix3f turn = key_frame.pose().block<3, 3>(0, 0) * first_pose.block<3, 3>(0, 0).transpose();
+        float turned = std::acos(std::min(1.0F, std::max(-1.0F, (turn.trace() - 1.0F) / 2.0F)));
+        float min_parallax_cosine = std::min(TRACK_MIN_PARALLAX_COSINE, std::cos(ROTATION_PARALLAX_FACTOR * turned));
         auto points = triangulation::triangulate_points({track.sightings.front().pixel},
                                                         {Eigen::Vector2f(pixel.x, pixel.y)},
-                                                        trajectory.pose_at(track.sightings.front().frame_index),
+                                                        first_pose,
                                                         key_frame.pose(),
                                                         m_camera,
-                                                        TRACK_MIN_PARALLAX_COSINE,
+                                                        min_parallax_cosine,
                                                         TRACK_MAX_REPROJECTION_ERROR);
         if (points.empty()) {
             continue;
