@@ -180,6 +180,15 @@ void Mapper::bundle_adjust(KeyFrame& key_frame, const Frame& last_frame)
         .step_constraints = window.step_constraints,
     };
 
+    // Store poses before optimization to reproject the single-observation points excluded from optimization
+    std::vector<std::pair<Frame*, Eigen::Matrix4f>> anchors;
+    anchors.reserve(window.frames.size());
+    for (const auto& frame_config : window.frames) {
+        if (frame_config.optimize) {
+            anchors.emplace_back(frame_config.frame, frame_config.frame->pose());
+        }
+    }
+
     optimization::Snapshot snapshot(config, m_map, true);
     bool optimized = false;
     time_it("Bundle adjustment", [&]() { optimized = optimization::optimize(config, m_camera, m_map); });
@@ -191,8 +200,8 @@ void Mapper::bundle_adjust(KeyFrame& key_frame, const Frame& last_frame)
     }
     if (healthy && !m_config.metric_steps.empty()) {
         for (const auto& constraint : window.step_constraints) {
-            float elapsed = static_cast<float>(constraint.b->index() - constraint.a->index()) *
-                            m_config.seconds_per_frame;
+            float elapsed =
+                static_cast<float>(constraint.b->index() - constraint.a->index()) * m_config.seconds_per_frame;
             if (!motion::is_rotation_plausible(constraint.a->pose(), constraint.b->pose(), elapsed)) {
                 healthy = false;
                 break;
@@ -202,6 +211,23 @@ void Mapper::bundle_adjust(KeyFrame& key_frame, const Frame& last_frame)
     if (!healthy && optimized) {
         snapshot.restore();
         std::cout << "Local bundle adjustment rolled back by motion health contract\n";
+        return;
+    }
+
+    // Reproject single-observation points excluded from optimization back to their relative locations
+    for (const auto& [frame, before] : anchors) {
+        const auto& after = frame->pose();
+        Eigen::Matrix3f rotation_before = before.block<3, 3>(0, 0);
+        Eigen::Vector3f translation_before = before.block<3, 1>(0, 3);
+        Eigen::Matrix3f rotation_after = after.block<3, 3>(0, 0);
+        Eigen::Vector3f translation_after = after.block<3, 1>(0, 3);
+        for (const auto& match : frame->map_matches()) {
+            if (match.point.observations().size() > 1) {
+                continue;
+            }
+            Eigen::Vector3f in_camera = rotation_before * match.point.position() + translation_before;
+            match.point.set_position(rotation_after.transpose() * (in_camera - translation_after));
+        }
     }
 }
 

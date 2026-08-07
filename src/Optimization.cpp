@@ -87,6 +87,7 @@ class StepLengthError {
 };
 
 static const float STEP_SIGMA_FRACTION = 0.5f;
+static const size_t MIN_OBSERVATIONS_TO_OPTIMIZE = 2;
 
 static Eigen::Matrix3f rodrigues_to_matrix(const Eigen::Vector3f& rvec)
 {
@@ -161,6 +162,9 @@ bool optimize(const OptimizationConfig& config, const Camera& camera, Map& map)
 
         for (auto match : frame_config.frame->map_matches()) {
             const auto& point = match.point;
+            if (point.observations().size() < MIN_OBSERVATIONS_TO_OPTIMIZE) {
+                continue;
+            }
             map_point_params.emplace(
                 &point, std::array<double, 3>{point.position().x(), point.position().y(), point.position().z()});
             if (config.optimize_points) {
