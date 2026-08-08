@@ -7,7 +7,6 @@
 #include "Frame.h"
 #include "Helpers.h"
 #include "LocalWindow.h"
-#include "MotionModel.h"
 #include "Optimization.h"
 #include "Slam.h"
 #include "Triangulation.h"
@@ -76,7 +75,6 @@ const std::vector<std::shared_ptr<KeyFrame>>& Mapper::key_frames() const
 std::shared_ptr<KeyFrame> Mapper::insert(Frame&& frame,
                                          TrackStore& tracks,
                                          const Trajectory& trajectory,
-                                         const Frame& last_frame,
                                          FrameDiagnostics& diagnostics)
 {
     auto key_frame = std::make_shared<KeyFrame>(std::move(frame));
@@ -89,7 +87,7 @@ std::shared_ptr<KeyFrame> Mapper::insert(Frame&& frame,
         time_it("Triangulate tracks", [&]() { triangulate_tracks(*key_frame, tracks, trajectory, diagnostics); });
     }
     if (m_config.bundle_adjust) {
-        bundle_adjust(*key_frame, last_frame);
+        bundle_adjust(*key_frame);
     }
     if (m_config.cull_points) {
         time_it("Cull points", [&]() { cull_points(diagnostics); });
@@ -181,48 +179,24 @@ void Mapper::triangulate_tracks(KeyFrame& key_frame,
               << validated << ", inconsistent " << inconsistent.size() << ", key frame anchors " << ba_frames << '\n';
 }
 
-void Mapper::bundle_adjust(KeyFrame& key_frame, const Frame& last_frame)
+void Mapper::bundle_adjust(KeyFrame& key_frame)
 {
-    auto window = optimization::build_local_window(m_key_frames, key_frame, BA_WINDOW, m_config.metric_steps);
+    auto window = optimization::build_local_window(m_key_frames, key_frame, BA_WINDOW);
     auto config = optimization::OptimizationConfig{
         .optimize_points = true,
-        .frames = window.frames,
-        .step_constraints = window.step_constraints,
+        .frames = window,
     };
 
     // Store poses before optimization to reproject the single-observation points excluded from optimization
     std::vector<std::pair<Frame*, Eigen::Matrix4f>> anchors;
-    anchors.reserve(window.frames.size());
-    for (const auto& frame_config : window.frames) {
+    anchors.reserve(window.size());
+    for (const auto& frame_config : window) {
         if (frame_config.optimize) {
             anchors.emplace_back(frame_config.frame, frame_config.frame->pose());
         }
     }
 
-    optimization::Snapshot snapshot(config, m_map, true);
-    bool optimized = false;
-    time_it("Bundle adjustment", [&]() { optimized = optimization::optimize(config, m_camera, m_map); });
-
-    bool healthy = optimized;
-    if (healthy && !m_config.metric_steps.empty() &&
-        !motion::is_rotation_plausible(last_frame.pose(), key_frame.pose(), m_config.seconds_per_frame)) {
-        healthy = false;
-    }
-    if (healthy && !m_config.metric_steps.empty()) {
-        for (const auto& constraint : window.step_constraints) {
-            float elapsed =
-                static_cast<float>(constraint.b->index() - constraint.a->index()) * m_config.seconds_per_frame;
-            if (!motion::is_rotation_plausible(constraint.a->pose(), constraint.b->pose(), elapsed)) {
-                healthy = false;
-                break;
-            }
-        }
-    }
-    if (!healthy && optimized) {
-        snapshot.restore();
-        std::cout << "Local bundle adjustment rolled back by motion health contract\n";
-        return;
-    }
+    time_it("Bundle adjustment", [&]() { optimization::optimize(config, m_camera, m_map); });
 
     // Reproject single-observation points excluded from optimization back to their relative locations
     for (const auto& [frame, before] : anchors) {

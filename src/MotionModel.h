@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Eigen/Dense>
-#include <vector>
 
 namespace slam::motion {
 
@@ -10,14 +9,8 @@ constexpr float MAX_ANGULAR_SPEED_DEGREES = 120.0F;
 
 Eigen::Vector3f camera_center(const Eigen::Matrix4f& pose);
 
-/** Distance travelled between two frame indices according to per-frame wheel odometry steps. */
-float metric_distance(const std::vector<float>& steps, size_t from, size_t to);
-
 float rotation_difference_degrees(const Eigen::Matrix4f& a, const Eigen::Matrix4f& b);
 
 bool is_rotation_plausible(const Eigen::Matrix4f& previous, const Eigen::Matrix4f& candidate, float elapsed_seconds);
-
-/** Preserves rotation but places the camera one measured step forward from the previous pose. */
-Eigen::Matrix4f with_metric_step(const Eigen::Matrix4f& previous, const Eigen::Matrix4f& candidate, float distance);
 
 } // namespace slam::motion

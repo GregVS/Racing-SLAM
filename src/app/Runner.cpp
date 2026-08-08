@@ -182,14 +182,6 @@ int run(const Options& options)
         .essential_matrix_estimation = true,
         .seconds_per_frame = 1.0F / fps,
     };
-    if (yaml["steps"]) {
-        std::ifstream steps(yaml["steps"].as<std::string>());
-        float step;
-        while (steps >> step) {
-            config.metric_steps.push_back(step);
-        }
-        std::cout << "Metric steps loaded: " << config.metric_steps.size() << '\n';
-    }
     Slam slam(setup.video_loader, setup.camera, setup.mask, std::make_unique<features::OrbFeatureExtractor>(), config);
     slam.initialize();
 

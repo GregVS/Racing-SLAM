@@ -19,7 +19,6 @@ struct SlamConfig {
     bool cull_points = true;
     bool essential_matrix_estimation = true;
     float seconds_per_frame = 0.0F;
-    std::vector<float> metric_steps;
 };
 
 /** For visualization purposes */

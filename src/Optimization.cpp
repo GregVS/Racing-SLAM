@@ -63,30 +63,6 @@ class ReprojectionError {
     const float m_principal_point_y;
 };
 
-class StepLengthError {
-  public:
-    StepLengthError(float distance, float sigma) : m_distance(distance), m_sigma(sigma) {}
-
-    template <typename T> bool operator()(const T* const camera_a, const T* const camera_b, T* residual) const
-    {
-        T dx = camera_a[3] - camera_b[3];
-        T dy = camera_a[4] - camera_b[4];
-        T dz = camera_a[5] - camera_b[5];
-        residual[0] = (sqrt(dx * dx + dy * dy + dz * dz + T(1e-12)) - T(m_distance)) / T(m_sigma);
-        return true;
-    }
-
-    static ceres::CostFunction* Create(float distance, float sigma)
-    {
-        return new ceres::AutoDiffCostFunction<StepLengthError, 1, 6, 6>(new StepLengthError(distance, sigma));
-    }
-
-  private:
-    const float m_distance;
-    const float m_sigma;
-};
-
-static const float STEP_SIGMA_FRACTION = 0.5f;
 static const size_t MIN_OBSERVATIONS_TO_OPTIMIZE = 2;
 
 static Eigen::Matrix3f rodrigues_to_matrix(const Eigen::Vector3f& rvec)
@@ -193,30 +169,6 @@ bool optimize(const OptimizationConfig& config, const Camera& camera, Map& map)
                                      frame_params[frame].data(),
                                      map_point_params[&match.point].data());
         }
-    }
-
-    // Wheel odometry owns camera position; visual optimization may still refine orientation.
-    for (const auto& frame_config : config.frames) {
-        if (frame_config.optimize && !frame_config.optimize_position) {
-            problem.SetManifold(frame_params[frame_config.frame].data(), new ceres::SubsetManifold(6, {3, 4, 5}));
-        }
-    }
-
-    // Step constraints
-    for (const auto& constraint : config.step_constraints) {
-        if (frame_params.find(constraint.a) == frame_params.end() ||
-            frame_params.find(constraint.b) == frame_params.end() || constraint.distance <= 0) {
-            continue;
-        }
-        if (frames_to_optimize.find(constraint.a) == frames_to_optimize.end() &&
-            frames_to_optimize.find(constraint.b) == frames_to_optimize.end()) {
-            continue;
-        }
-        problem.AddResidualBlock(
-            StepLengthError::Create(constraint.distance, STEP_SIGMA_FRACTION * constraint.distance),
-            new ceres::HuberLoss(2.0),
-            frame_params[constraint.a].data(),
-            frame_params[constraint.b].data());
     }
 
     // Mark frames and points that are not being optimized as constant

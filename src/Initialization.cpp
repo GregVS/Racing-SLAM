@@ -4,7 +4,6 @@
 
 #include "Frame.h"
 #include "Slam.h"
-#include "MotionModel.h"
 #include "Optimization.h"
 #include "PoseEstimation.h"
 #include "Triangulation.h"
@@ -225,9 +224,7 @@ InitializationResult initialize_map(VideoLoader& video_loader,
         };
         optimization::optimize(ba_config, camera, map);
 
-        float target = config.metric_steps.empty() ? 1.0F : motion::metric_distance(config.metric_steps, ref_frame->index(), query_frame->index());
-        float scale =
-            target / (query_frame->pose().block<3, 1>(0, 3) - ref_frame->pose().block<3, 1>(0, 3)).stableNorm();
+        float scale = 1.0F / (query_frame->pose().block<3, 1>(0, 3) - ref_frame->pose().block<3, 1>(0, 3)).stableNorm();
         std::cout << "Scale: " << scale << '\n';
 
         auto scaled_pose = query_frame->pose();

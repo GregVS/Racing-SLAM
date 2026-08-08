@@ -6,7 +6,6 @@
 #include "Optimization.h"
 #include "PoseEstimation.h"
 #include "Slam.h"
-#include "YawEstimation.h"
 #include "features/FeatureExtractor.h"
 
 namespace slam {
@@ -164,33 +163,11 @@ std::vector<FeatureMatch> Tracker::initial_pose_estimate(Frame& frame,
                 (motion::camera_center(trajectory.pose_at(index)) -
                  motion::camera_center(trajectory.pose_at(index - 1)))
                     .norm();
-            if (!m_config.metric_steps.empty()) {
-                last_step = motion::metric_distance(m_config.metric_steps, index, frame.index());
-            }
             Eigen::Matrix4f relative = pose_estimate.pose;
-            if (!m_config.metric_steps.empty()) {
-                float max_yaw =
-                    motion::MAX_ANGULAR_SPEED_DEGREES * m_config.seconds_per_frame * 3.14159265358979323846F / 180.0F;
-                auto yaw_estimate =
-                    yaw::estimate(m_last_frame->features(), frame.features(), matches, m_camera, max_yaw);
-                Eigen::Matrix4f identity = Eigen::Matrix4f::Identity();
-                bool essential_healthy = motion::is_rotation_plausible(identity, relative, m_config.seconds_per_frame);
-                if (!essential_healthy && yaw_estimate.healthy) {
-                    relative = Eigen::Matrix4f::Identity();
-                    relative.block<3, 3>(0, 0) =
-                        Eigen::AngleAxisf(yaw_estimate.radians, Eigen::Vector3f::UnitY()).toRotationMatrix();
-                    std::cout << "Unhealthy essential rotation replaced by bounded yaw\n";
-                }
-            }
             Eigen::Matrix4f candidate = relative * m_last_frame->pose();
             if (!motion::is_rotation_plausible(m_last_frame->pose(), candidate, m_config.seconds_per_frame)) {
                 std::cout << "Essential rotation rejected by temporal motion bound\n";
                 relative.block<3, 3>(0, 0) = Eigen::Matrix3f::Identity();
-                candidate = relative * m_last_frame->pose();
-            }
-            if (!m_config.metric_steps.empty() && last_step > 1e-6F) {
-                frame.set_pose(motion::with_metric_step(m_last_frame->pose(), candidate, last_step));
-                return pose_estimate.inlier_matches;
             }
 
             auto scaled = relative;
@@ -262,7 +239,7 @@ void Tracker::match_with_map(Frame& frame)
 
 void Tracker::optimize_pose(Frame& frame)
 {
-    if (!m_config.optimize_pose || !m_config.metric_steps.empty()) {
+    if (!m_config.optimize_pose) {
         return;
     }
     if (frame.num_map_matches() < MIN_TRACKED_MAP_POINTS) {
@@ -272,7 +249,7 @@ void Tracker::optimize_pose(Frame& frame)
     // Motion-only BA
     auto config = optimization::OptimizationConfig{
         .optimize_points = false,
-        .frames = {{true, &frame, m_config.metric_steps.empty()}},
+        .frames = {{true, &frame}},
     };
     optimization::Snapshot snapshot(config, m_map, false);
     bool optimized = optimization::optimize(config, m_camera, m_map);

@@ -27,7 +27,6 @@ class Mapper {
     std::shared_ptr<KeyFrame> insert(Frame&& frame,
                                      TrackStore& tracks,
                                      const Trajectory& trajectory,
-                                     const Frame& last_frame,
                                      FrameDiagnostics& diagnostics);
 
     void adopt(const std::shared_ptr<KeyFrame>& key_frame);
@@ -42,7 +41,7 @@ class Mapper {
                             TrackStore& tracks,
                             const Trajectory& trajectory,
                             FrameDiagnostics& diagnostics);
-    void bundle_adjust(KeyFrame& key_frame, const Frame& last_frame);
+    void bundle_adjust(KeyFrame& key_frame);
     void cull_points(FrameDiagnostics& diagnostics);
 
     const Camera& m_camera;
