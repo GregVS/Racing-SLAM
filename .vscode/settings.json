@@ -9,5 +9,5 @@
         "--header-insertion=never"
     ],
     "C_Cpp.intelliSenseEngine": "disabled",
-    "editor.rulers": [100]
+    "editor.rulers": [120]
 }

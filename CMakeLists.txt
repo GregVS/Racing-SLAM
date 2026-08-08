@@ -32,4 +32,3 @@ foreach(TEST_FILE ${TEST_FILES})
     target_include_directories(${TEST_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/src)
     target_link_libraries(${TEST_NAME} PRIVATE slam_lib Eigen3::Eigen Ceres::ceres ${OpenCV_LIBS} ${Pangolin_LIBRARIES} yaml-cpp::yaml-cpp)
 endforeach()
-

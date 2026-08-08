@@ -4,3 +4,5 @@ experiments/
 .cache/
 .venv/
 __pycache__/
+docs/
+scripts/
