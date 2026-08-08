@@ -1,10 +1,12 @@
 #include "Mapper.h"
 
+#include <algorithm>
 #include <unordered_set>
 
 #include "Frame.h"
 #include "Helpers.h"
 #include "LocalWindow.h"
+#include "MotionModel.h"
 #include "Optimization.h"
 #include "Slam.h"
 #include "Triangulation.h"
@@ -17,8 +19,12 @@ constexpr size_t MAX_KEY_FRAME_GAP = 20;
 constexpr size_t MIN_COVISIBLE_POINTS = 50;
 constexpr float MIN_COVISIBLE_FRACTION = 0.7F;
 
-constexpr size_t BA_WINDOW = MAX_KEY_FRAME_GAP; // Must be at least MAX_KEY_FRAME_GAP
-constexpr float TRACK_MIN_PARALLAX_COSINE = 0.999848F;
+constexpr size_t BA_WINDOW = MAX_KEY_FRAME_GAP;        // Must be at least MAX_KEY_FRAME_GAP
+constexpr float TRACK_MIN_PARALLAX_COSINE = 0.999848F; // 1 degree
+
+constexpr float ROTATION_PARALLAX_FACTOR = 0.20F;    // Requires higher parallax for higher rotation
+constexpr size_t MIN_NEW_POINTS_PER_KEY_FRAME = 100; // Min quota that allows accepting points with less parallax
+constexpr float ANY_PARALLAX_COSINE = 1.0F;
 constexpr float TRACK_MAX_REPROJECTION_ERROR = 4.0F;
 constexpr float MAX_POINT_REPROJECTION_ERROR = 3.0F;
 
@@ -66,10 +72,8 @@ const std::vector<std::shared_ptr<KeyFrame>>& Mapper::key_frames() const
     return m_key_frames;
 }
 
-std::shared_ptr<KeyFrame> Mapper::insert(Frame&& frame,
-                                         TrackStore& tracks,
-                                         const Trajectory& trajectory,
-                                         FrameDiagnostics& diagnostics)
+std::shared_ptr<KeyFrame>
+Mapper::insert(Frame&& frame, TrackStore& tracks, const Trajectory& trajectory, FrameDiagnostics& diagnostics)
 {
     auto key_frame = std::make_shared<KeyFrame>(std::move(frame));
 
@@ -96,38 +100,47 @@ void Mapper::triangulate_tracks(KeyFrame& key_frame,
                                 const Trajectory& trajectory,
                                 FrameDiagnostics& diagnostics)
 {
-    size_t created = 0;
-    size_t validated = 0;
-    size_t ba_frames = 0;
     std::unordered_set<const Frame*> ba_window;
     size_t first = m_key_frames.size() > BA_WINDOW ? m_key_frames.size() - BA_WINDOW : 0;
     for (size_t i = first; i < m_key_frames.size(); i++) {
         ba_window.insert(m_key_frames[i].get());
     }
 
+    struct Candidate {
+        const Track* track;
+        Eigen::Vector3f position;
+        size_t keypoint_index;
+        float parallax_cosine;
+        float required_cosine;
+    };
+
+    std::vector<Candidate> candidates;
+    candidates.reserve(tracks.tracks().size());
     std::vector<TrackId> inconsistent;
     inconsistent.reserve(tracks.tracks().size());
+
     for (const auto& [track_id, track] : tracks.tracks()) {
         size_t keypoint_index = track.keypoint_index;
         if (key_frame.is_matched(keypoint_index) || track.sightings.empty()) {
             continue;
         }
         auto pixel = key_frame.keypoint(keypoint_index).pt;
+        auto first_pose = trajectory.pose_at(track.sightings.front().frame_index);
         auto points = triangulation::triangulate_points({track.sightings.front().pixel},
                                                         {Eigen::Vector2f(pixel.x, pixel.y)},
-                                                        trajectory.pose_at(track.sightings.front().frame_index),
+                                                        first_pose,
                                                         key_frame.pose(),
                                                         m_camera,
-                                                        TRACK_MIN_PARALLAX_COSINE,
+                                                        ANY_PARALLAX_COSINE,
                                                         TRACK_MAX_REPROJECTION_ERROR);
         if (points.empty()) {
-            continue;
+            continue; // Behind a camera, or does not reproject: a bad correspondence either way
         }
 
         bool consistent = true;
         for (const auto& sighting : track.sightings) {
-            if ((m_camera.project(trajectory.pose_at(sighting.frame_index), points.front().position) - sighting.pixel)
-                    .norm() > TRACK_MAX_REPROJECTION_ERROR) {
+            auto projected = m_camera.project(trajectory.pose_at(sighting.frame_index), points.front().position);
+            if ((projected - sighting.pixel).norm() > TRACK_MAX_REPROJECTION_ERROR) {
                 consistent = false;
                 break;
             }
@@ -137,24 +150,58 @@ void Mapper::triangulate_tracks(KeyFrame& key_frame,
             continue;
         }
 
-        auto& point = m_map.create_point(points.front().position, key_frame, keypoint_index);
-        for (const auto& sighting : track.sightings) {
+        const auto& position = points.front().position;
+        Eigen::Vector3f to_first = (motion::camera_center(first_pose) - position).normalized();
+        Eigen::Vector3f to_now = (key_frame.camera_center() - position).normalized();
+
+        Eigen::Matrix3f turn = key_frame.pose().block<3, 3>(0, 0) * first_pose.block<3, 3>(0, 0).transpose();
+        float turned = std::acos(std::min(1.0F, std::max(-1.0F, (turn.trace() - 1.0F) / 2.0F)));
+
+        candidates.push_back({&track,
+                              position,
+                              keypoint_index,
+                              to_first.dot(to_now),
+                              std::min(TRACK_MIN_PARALLAX_COSINE, std::cos(ROTATION_PARALLAX_FACTOR * turned))});
+    }
+
+    // Everything above threshold, then best of the rest until the quota is met
+    std::vector<size_t> accepted;
+    std::vector<size_t> rejected;
+    accepted.reserve(candidates.size());
+    for (size_t i = 0; i < candidates.size(); i++) {
+        (candidates[i].parallax_cosine <= candidates[i].required_cosine ? accepted : rejected).push_back(i);
+    }
+    size_t topped_up = 0;
+    if (accepted.size() < MIN_NEW_POINTS_PER_KEY_FRAME && !rejected.empty()) {
+        std::sort(rejected.begin(), rejected.end(), [&](size_t a, size_t b) {
+            return candidates[a].parallax_cosine < candidates[b].parallax_cosine;
+        });
+        topped_up = std::min(MIN_NEW_POINTS_PER_KEY_FRAME - accepted.size(), rejected.size());
+        accepted.insert(accepted.end(), rejected.begin(), rejected.begin() + topped_up);
+    }
+
+    size_t created = 0;
+    size_t consistent = 0;
+    size_t observations = 0;
+    for (size_t index : accepted) {
+        const auto& candidate = candidates[index];
+        auto& point = m_map.create_point(candidate.position, key_frame, candidate.keypoint_index);
+        for (const auto& sighting : candidate.track->sightings) {
+            auto* observer = sighting.key_frame;
             // Only associate with key frames in the BA window, to keep the covisible graph small
-            if (sighting.key_frame == nullptr || sighting.key_frame == &key_frame ||
-                ba_window.find(sighting.key_frame) == ba_window.end()) {
+            if (observer == nullptr || observer == &key_frame || ba_window.find(observer) == ba_window.end()) {
                 continue;
             }
-            auto* observer = sighting.key_frame;
             if (observer->is_matched(sighting.keypoint_index) || observer->is_matched(point)) {
                 continue;
             }
             m_map.associate(*observer, point, sighting.keypoint_index);
-            ba_frames++;
+            observations++;
         }
 
-        if (track.sightings.size() >= 3) {
+        if (candidate.track->sightings.size() >= 3) {
             point.set_track_consistent();
-            validated++;
+            consistent++;
         }
         created++;
     }
@@ -163,10 +210,11 @@ void Mapper::triangulate_tracks(KeyFrame& key_frame,
         tracks.erase(track_id);
     }
     diagnostics.triangulated = created;
-    diagnostics.track_consistent = validated;
+    diagnostics.track_consistent = consistent;
     diagnostics.poisoned = inconsistent.size();
     std::cout << "Triangulated from tracks: " << created << " of " << tracks.tracks().size() << " tracks, consistent "
-              << validated << ", inconsistent " << inconsistent.size() << ", key frame anchors " << ba_frames << '\n';
+              << consistent << ", inconsistent " << inconsistent.size() << ", observations " << observations
+              << ", topped up " << topped_up << '\n';
 }
 
 void Mapper::bundle_adjust(KeyFrame& key_frame)
