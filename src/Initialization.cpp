@@ -3,9 +3,9 @@
 #include <algorithm>
 
 #include "Frame.h"
-#include "Slam.h"
 #include "Optimization.h"
 #include "PoseEstimation.h"
+#include "Slam.h"
 #include "Triangulation.h"
 #include "features/FeatureExtractor.h"
 
@@ -197,10 +197,8 @@ InitializationResult initialize_map(VideoLoader& video_loader,
             continue;
         }
 
-        ref_frame =
-            std::make_shared<KeyFrame>(Frame(static_cast<int>(anchor_index), anchor_image, anchor_features));
-        query_frame =
-            std::make_shared<KeyFrame>(Frame(static_cast<int>(frame_index), image, current_features));
+        ref_frame = std::make_shared<KeyFrame>(Frame(static_cast<int>(anchor_index), anchor_image, anchor_features));
+        query_frame = std::make_shared<KeyFrame>(Frame(static_cast<int>(frame_index), image, current_features));
         query_frame->set_pose(pose_estimate.pose);
         accepted_matches = pose_estimate.inlier_matches;
         break;
@@ -218,11 +216,7 @@ InitializationResult initialize_map(VideoLoader& video_loader,
 
     // Bundle adjustment
     {
-        auto ba_config = optimization::OptimizationConfig{
-            .optimize_points = true,
-            .frames = {{false, ref_frame.get()}, {true, query_frame.get()}},
-        };
-        optimization::optimize(ba_config, camera, map);
+        optimization::bundle_adjust({{false, ref_frame.get()}, {true, query_frame.get()}}, camera, map);
 
         float scale = 1.0F / (query_frame->pose().block<3, 1>(0, 3) - ref_frame->pose().block<3, 1>(0, 3)).stableNorm();
         std::cout << "Scale: " << scale << '\n';

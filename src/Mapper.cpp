@@ -220,10 +220,6 @@ void Mapper::triangulate_tracks(KeyFrame& key_frame,
 void Mapper::bundle_adjust(KeyFrame& key_frame)
 {
     auto window = optimization::build_local_window(m_key_frames, key_frame, BA_WINDOW);
-    auto config = optimization::OptimizationConfig{
-        .optimize_points = true,
-        .frames = window,
-    };
 
     // Store poses before optimization to reproject the single-observation points excluded from optimization
     std::vector<std::pair<Frame*, Eigen::Matrix4f>> anchors;
@@ -234,7 +230,7 @@ void Mapper::bundle_adjust(KeyFrame& key_frame)
         }
     }
 
-    time_it("Bundle adjustment", [&]() { optimization::optimize(config, m_camera, m_map); });
+    time_it("Bundle adjustment", [&]() { optimization::bundle_adjust(window, m_camera, m_map); });
 
     // Reproject single-observation points excluded from optimization back to their relative locations
     for (const auto& [frame, before] : anchors) {

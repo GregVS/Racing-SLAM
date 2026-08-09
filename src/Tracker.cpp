@@ -159,10 +159,9 @@ std::vector<FeatureMatch> Tracker::initial_pose_estimate(Frame& frame,
         auto pose_estimate = pose::estimate_pose(m_last_frame->features(), frame.features(), matches, m_camera);
         auto index = m_last_frame->index();
         if (index >= 1 && index < trajectory.size()) {
-            float last_step =
-                (motion::camera_center(trajectory.pose_at(index)) -
-                 motion::camera_center(trajectory.pose_at(index - 1)))
-                    .norm();
+            float last_step = (motion::camera_center(trajectory.pose_at(index)) -
+                               motion::camera_center(trajectory.pose_at(index - 1)))
+                                  .norm();
             Eigen::Matrix4f relative = pose_estimate.pose;
             Eigen::Matrix4f candidate = relative * m_last_frame->pose();
             if (!motion::is_rotation_plausible(m_last_frame->pose(), candidate, m_config.seconds_per_frame)) {
@@ -246,15 +245,10 @@ void Tracker::optimize_pose(Frame& frame)
         return;
     }
 
-    // Motion-only BA
-    auto config = optimization::OptimizationConfig{
-        .optimize_points = false,
-        .frames = {{true, &frame}},
-    };
-    optimization::Snapshot snapshot(config, m_map, false);
-    bool optimized = optimization::optimize(config, m_camera, m_map);
+    Eigen::Matrix4f before = frame.pose();
+    bool optimized = optimization::refine_pose(frame, m_camera);
     if (!optimized || !motion::is_rotation_plausible(m_last_frame->pose(), frame.pose(), m_config.seconds_per_frame)) {
-        snapshot.restore();
+        frame.set_pose(before);
         if (optimized) {
             std::cout << "Pose optimization rolled back by temporal motion bound\n";
         }
