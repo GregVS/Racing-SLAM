@@ -19,6 +19,11 @@ constexpr size_t MAX_KEY_FRAME_GAP = 20;
 constexpr size_t MIN_COVISIBLE_POINTS = 50;
 constexpr float MIN_COVISIBLE_FRACTION = 0.7F;
 
+// Key frame insertion criteria based on unmapped features
+constexpr size_t NEW_TRACKS_THRESHOLD = 200;
+constexpr size_t MIN_SIGHTINGS_FOR_TRACK = 3;
+constexpr float MIN_TRACK_TRAVEL_PIXELS = 20.0F;
+
 constexpr size_t BA_WINDOW = MAX_KEY_FRAME_GAP;        // Must be at least MAX_KEY_FRAME_GAP
 constexpr float TRACK_MIN_PARALLAX_COSINE = 0.999848F; // 1 degree
 
@@ -47,7 +52,26 @@ size_t Mapper::covisible_points(const Frame& frame) const
     return covisible;
 }
 
-bool Mapper::needs_key_frame(const Frame& frame) const
+size_t Mapper::unmapped_tracks(const Frame& frame, const TrackStore& tracks) const
+{
+    size_t count = 0;
+    for (const auto& [id, track] : tracks.tracks()) {
+        if (track.sightings.size() < MIN_SIGHTINGS_FOR_TRACK) {
+            continue;
+        }
+        if (track.keypoint_index < frame.features().keypoints.size() && frame.is_matched(track.keypoint_index)) {
+            continue;
+        }
+        const float travel = (track.sightings.back().pixel - track.sightings.front().pixel).norm();
+        if (travel < MIN_TRACK_TRAVEL_PIXELS) {
+            continue;
+        }
+        count++;
+    }
+    return count;
+}
+
+bool Mapper::needs_key_frame(const Frame& frame, const TrackStore& tracks) const
 {
     const auto& last_key_frame = *m_key_frames.back();
     size_t gap = frame.index() - last_key_frame.index();
@@ -56,7 +80,12 @@ bool Mapper::needs_key_frame(const Frame& frame) const
     }
 
     size_t covisible = covisible_points(frame);
-    std::cout << "Covisible with last key frame: " << covisible << " of " << frame.num_map_matches() << '\n';
+    const size_t waiting = unmapped_tracks(frame, tracks);
+    std::cout << "Covisible with last key frame: " << covisible << " of " << frame.num_map_matches()
+              << ", unmapped tracks ready " << waiting << '\n';
+    if (waiting >= NEW_TRACKS_THRESHOLD) {
+        return true;
+    }
     return covisible < MIN_COVISIBLE_POINTS ||
            static_cast<float>(covisible) <
                MIN_COVISIBLE_FRACTION * static_cast<float>(last_key_frame.num_map_matches());

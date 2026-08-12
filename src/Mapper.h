@@ -21,13 +21,11 @@ class Mapper {
   public:
     Mapper(const Camera& camera, const SlamConfig& config, Map& map);
 
-    bool needs_key_frame(const Frame& frame) const;
+    bool needs_key_frame(const Frame& frame, const TrackStore& tracks) const;
 
     /** Promotes the frame, triangulates the tracks it closes, bundle adjusts and culls */
-    std::shared_ptr<KeyFrame> insert(Frame&& frame,
-                                     TrackStore& tracks,
-                                     const Trajectory& trajectory,
-                                     FrameDiagnostics& diagnostics);
+    std::shared_ptr<KeyFrame>
+    insert(Frame&& frame, TrackStore& tracks, const Trajectory& trajectory, FrameDiagnostics& diagnostics);
 
     void adopt(const std::shared_ptr<KeyFrame>& key_frame);
 
@@ -36,6 +34,9 @@ class Mapper {
   private:
     /** Numbers of covisible points with the last key frame */
     size_t covisible_points(const Frame& frame) const;
+
+    /** Tracks that are good quality but not yet triangulated */
+    size_t unmapped_tracks(const Frame& frame, const TrackStore& tracks) const;
 
     void triangulate_tracks(KeyFrame& key_frame,
                             TrackStore& tracks,
