@@ -118,14 +118,19 @@ bool Visualization::wait_for_step()
 
 void Visualization::draw_camera_poses(const Snapshot& snapshot)
 {
-    for (const auto& pose : snapshot.poses) {
+    const size_t n = snapshot.poses.size();
+    for (size_t i = 0; i < n; ++i) {
         const float camera_size = 1.5f;
-        const Eigen::Matrix4f inverse_pose = pose.inverse();
+        const Eigen::Matrix4f inverse_pose = snapshot.poses[i].inverse();
 
         glPushMatrix();
         glMultMatrixf(inverse_pose.data());
 
-        glColor3f(0.0f, 0.0f, 1.0f);
+        if (i == n - 1) {
+            glColor3f(0.0f, 1.0f, 0.0f); // Draw last (current) camera in green
+        } else {
+            glColor3f(0.0f, 0.0f, 1.0f); // Draw others in blue
+        }
         glBegin(GL_TRIANGLES);
         glVertex3f(0, 0, 0);
         glVertex3f(camera_size, 0, -camera_size);

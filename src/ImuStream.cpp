@@ -1,11 +1,9 @@
 #include "ImuStream.h"
 
 #include <algorithm>
-#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
-#include <yaml-cpp/yaml.h>
 
 namespace slam::imu {
 
@@ -43,32 +41,13 @@ Sample interpolate(const Sample& before, const Sample& after, double time)
             before.accel + fraction * (after.accel - before.accel)};
 }
 
-double scalar(const YAML::Node& node, const std::string& key, double fallback)
-{
-    return node[key] ? node[key].as<double>() : fallback;
-}
-
-Eigen::Matrix4d transform(const YAML::Node& node)
-{
-    if (!node || !node["data"] || node["data"].size() != 16) {
-        return Eigen::Matrix4d::Identity();
-    }
-    Eigen::Matrix4d matrix;
-    for (int i = 0; i < 16; i++) {
-        matrix(i / 4, i % 4) = node["data"][i].as<double>();
-    }
-    return matrix;
-}
-
 } // namespace
 
-Stream Stream::load(const std::string& directory)
+Stream Stream::load(const std::string& csv_path)
 {
-    const std::filesystem::path root(directory);
-
-    std::ifstream csv(root / "data.csv");
+    std::ifstream csv(csv_path);
     if (!csv) {
-        throw std::runtime_error("no imu data at " + (root / "data.csv").string());
+        throw std::runtime_error("no imu data at " + csv_path);
     }
 
     Stream stream;
@@ -80,20 +59,7 @@ Stream Stream::load(const std::string& directory)
         }
     }
     if (stream.m_samples.size() < 2) {
-        throw std::runtime_error("imu stream at " + directory + " holds less than two samples");
-    }
-
-    // Load sensor specs
-    const std::filesystem::path sidecar = root / "sensor.yaml";
-    if (std::filesystem::exists(sidecar)) {
-        const YAML::Node config = YAML::LoadFile(sidecar.string());
-        Calibration& calibration = stream.m_calibration;
-        calibration.rate = scalar(config, "rate_hz", 0.0);
-        calibration.noise.gyro = scalar(config, "gyroscope_noise_density", 0.0);
-        calibration.noise.accel = scalar(config, "accelerometer_noise_density", 0.0);
-        calibration.noise.gyro_bias = scalar(config, "gyroscope_random_walk", 0.0);
-        calibration.noise.accel_bias = scalar(config, "accelerometer_random_walk", 0.0);
-        calibration.sensor_to_camera = transform(config["T_SC"]);
+        throw std::runtime_error("imu stream at " + csv_path + " holds less than two samples");
     }
     return stream;
 }

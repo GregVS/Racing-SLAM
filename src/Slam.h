@@ -1,11 +1,13 @@
 #pragma once
 
 #include <optional>
-#include <unordered_map>
+#include <string>
 
 #include "Camera.h"
+#include "ImuStream.h"
 #include "Map.h"
 #include "Mapper.h"
+#include "Optimization.h"
 #include "Tracker.h"
 #include "Trajectory.h"
 #include "VideoLoader.h"
@@ -19,6 +21,11 @@ struct SlamConfig {
     bool cull_points = true;
     bool essential_matrix_estimation = true;
     float seconds_per_frame = 0.0F;
+    std::string imu_path; // data.csv path
+    imu::NoiseDensity imu_noise;
+    double imu_noise_inflation = 100.0; // Additional sensor noise
+    double attitude_error_density = 2.76e-3;
+    bool inertial_pose_seed = true;     // Seed each frame's pose from inertial data
 };
 
 /** For visualization purposes */
@@ -39,6 +46,9 @@ class Slam {
          const SlamConfig& config = SlamConfig());
 
     void initialize();
+
+    /** Meters per map unit, zero before alignment */
+    double metric_scale() const;
 
     /** Processes the next frame. Returns false once the video is exhausted. */
     bool step();
@@ -65,11 +75,17 @@ class Slam {
     size_t m_frame_index = 0;
     Map m_map;
     Trajectory m_trajectory;
+    std::optional<imu::Stream> m_imu;
+    optimization::InertialInput m_inertial;
+    double m_metric_scale = 0.0;
     Tracker m_tracker;
     Mapper m_mapper;
     FrameDiagnostics m_diagnostics;
 
     void record_pose(const Frame& frame);
+
+    /** Align map to metric scale using IMU data */
+    void align_to_metric_scale();
 };
 
 } // namespace slam

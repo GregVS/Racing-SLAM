@@ -4,10 +4,16 @@
 #include <opencv2/opencv.hpp>
 #include <unordered_set>
 
-#include "features/FeatureExtractor.h"
+#include "Imu.h"
 #include "KDTree.h"
+#include "features/FeatureExtractor.h"
 
 namespace slam {
+
+struct InertialState {
+    Eigen::Vector3d velocity = Eigen::Vector3d::Zero();
+    imu::Bias bias;
+};
 
 class Frame {
   public:
@@ -40,6 +46,9 @@ class Frame {
     const Eigen::Matrix4f& pose() const;
     void set_pose(const Eigen::Matrix4f& pose);
 
+    const InertialState& inertial() const;
+    void set_inertial(const InertialState& inertial);
+
     void add_map_match(const MapPointMatch& match);
     MapPoint& map_match(size_t index) const;
     bool is_matched(size_t keypoint_index) const;
@@ -54,6 +63,7 @@ class Frame {
     size_t m_index;
     cv::Mat m_image;
     Eigen::Matrix4f m_pose;
+    InertialState m_inertial;
 
     ExtractedFeatures m_features;
     KDTree2D m_kd_tree;
@@ -68,5 +78,9 @@ class KeyFrame : public Frame {
   public:
     explicit KeyFrame(Frame&& frame);
 };
+
+imu::State inertial_state(const Frame& frame);
+
+void set_inertial_state(Frame& frame, const imu::State& state);
 
 } // namespace slam

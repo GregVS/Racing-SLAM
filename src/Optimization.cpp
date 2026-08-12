@@ -7,6 +7,7 @@
 
 #include "Camera.h"
 #include "Frame.h"
+#include "ImuFactor.h"
 #include "Map.h"
 
 class ReprojectionError {
@@ -60,6 +61,30 @@ class ReprojectionError {
     const float m_focal_length_y;
     const float m_principal_point_x;
     const float m_principal_point_y;
+};
+
+//** Residuals between a predicted rotation and the current rotation */
+class PredictedRotationError {
+  public:
+    PredictedRotationError(const Eigen::Matrix3d& predicted, double sigma) : m_predicted(predicted), m_sigma(sigma) {}
+
+    template <typename T> bool operator()(const T* const camera, T* residuals) const
+    {
+        T current[9];
+        ceres::AngleAxisToRotationMatrix(camera, current);
+        const Eigen::Map<const Eigen::Matrix<T, 3, 3>> rotation(current);
+        const Eigen::Matrix<T, 3, 3> difference = m_predicted.cast<T>().transpose() * rotation;
+        T offset[3];
+        ceres::RotationMatrixToAngleAxis(difference.data(), offset);
+        residuals[0] = offset[0] / T(m_sigma);
+        residuals[1] = offset[1] / T(m_sigma);
+        residuals[2] = offset[2] / T(m_sigma);
+        return true;
+    }
+
+  private:
+    const Eigen::Matrix3d m_predicted;
+    const double m_sigma;
 };
 
 static const size_t MIN_OBSERVATIONS_TO_OPTIMIZE = 2;
@@ -117,6 +142,27 @@ void unpack_pose(const std::array<double, 6>& params, Frame& frame)
     frame.set_pose(pose);
 }
 
+std::array<double, 3> pack_velocity(const Frame& frame)
+{
+    const auto& velocity = frame.inertial().velocity;
+    return {velocity[0], velocity[1], velocity[2]};
+}
+
+std::array<double, 6> pack_bias(const Frame& frame)
+{
+    const auto& bias = frame.inertial().bias;
+    return {bias.gyro[0], bias.gyro[1], bias.gyro[2], bias.accel[0], bias.accel[1], bias.accel[2]};
+}
+
+void unpack_inertial(const std::array<double, 3>& velocity, const std::array<double, 6>& bias, Frame& frame)
+{
+    InertialState state;
+    state.velocity = Eigen::Vector3d(velocity[0], velocity[1], velocity[2]);
+    state.bias.gyro = Eigen::Vector3d(bias[0], bias[1], bias[2]);
+    state.bias.accel = Eigen::Vector3d(bias[3], bias[4], bias[5]);
+    frame.set_inertial(state);
+}
+
 ceres::CostFunction* reprojection(const Frame& frame, size_t keypoint_index, const Camera& camera)
 {
     return ReprojectionError::Create(frame.keypoint(keypoint_index).pt.x,
@@ -129,10 +175,14 @@ ceres::CostFunction* reprojection(const Frame& frame, size_t keypoint_index, con
 
 } // namespace
 
-bool refine_pose(Frame& frame, const Camera& camera)
+bool refine_pose(Frame& frame, const Camera& camera, const InertialConstraint& inertial)
 {
     auto problem = ceres::Problem();
     std::array<double, 6> pose_params = pack_pose(frame);
+    std::array<double, 6> previous_pose{};
+    std::array<double, 3> previous_velocity{};
+    std::array<double, 6> previous_bias{};
+    std::array<double, 3> velocity_params{};
     std::unordered_map<const MapPoint*, std::array<double, 3>> point_params;
 
     for (auto match : frame.map_matches()) {
@@ -143,37 +193,79 @@ bool refine_pose(Frame& frame, const Camera& camera)
         point_params.emplace(&point,
                              std::array<double, 3>{point.position().x(), point.position().y(), point.position().z()});
     }
+    size_t reprojections = 0;
     for (const auto& match : frame.map_matches()) {
         if (point_params.find(&match.point) == point_params.end()) {
             continue;
         }
+        double* point = point_params[&match.point].data();
         problem.AddResidualBlock(reprojection(frame, match.keypoint_index, camera),
                                  new ceres::HuberLoss(sqrt(5.991)),
                                  pose_params.data(),
-                                 point_params[&match.point].data());
-    }
-    for (auto& [point, params] : point_params) {
-        if (problem.HasParameterBlock(params.data())) {
-            problem.SetParameterBlockConstant(params.data());
-        }
+                                 point);
+        problem.SetParameterBlockConstant(point);
+        reprojections++;
     }
 
+    // Nothing to constrain
+    if (reprojections == 0) {
+        return false;
+    }
+
+    const auto* rotation_prior = std::get_if<RotationPrior>(&inertial);
+    const bool rotation_valid = rotation_prior != nullptr && rotation_prior->enabled();
+
+    const auto* imu_delta = std::get_if<InertialDelta>(&inertial);
+    const bool imu_valid = imu_delta != nullptr && imu_delta->enabled();
+
+    if (imu_valid) {
+        previous_pose = pack_pose(*imu_delta->previous);
+        previous_velocity = pack_velocity(*imu_delta->previous);
+        previous_bias = pack_bias(*imu_delta->previous);
+        velocity_params = pack_velocity(frame);
+        problem.AddResidualBlock(imu_preintegration(imu_delta->summary, imu_delta->gravity),
+                                 nullptr,
+                                 previous_pose.data(),
+                                 previous_velocity.data(),
+                                 previous_bias.data(),
+                                 pose_params.data(),
+                                 velocity_params.data());
+        for (double* block : {previous_pose.data(), previous_velocity.data(), previous_bias.data()}) {
+            problem.SetParameterBlockConstant(block);
+        }
+    } else if (rotation_valid) {
+        problem.AddResidualBlock(
+            new ceres::AutoDiffCostFunction<PredictedRotationError, 3, 6>(
+                new PredictedRotationError(rotation_prior->predicted, rotation_prior->sigma_radians)),
+            nullptr,
+            pose_params.data());
+    }
     if (!solve(problem)) {
         return false;
     }
     unpack_pose(pose_params, frame);
+    if (imu_valid) {
+        unpack_inertial(velocity_params, previous_bias, frame);
+    }
     return true;
 }
 
-bool bundle_adjust(const std::vector<FrameConfig>& frames, const Camera& camera, Map& map)
+bool bundle_adjust(const std::vector<FrameConfig>& frames,
+                   const Camera& camera,
+                   Map& map,
+                   const InertialInput& inertial)
 {
     auto problem = ceres::Problem();
     std::unordered_map<const Frame*, std::array<double, 6>> frame_params;
+    std::unordered_map<const Frame*, std::array<double, 3>> velocity_params;
+    std::unordered_map<const Frame*, std::array<double, 6>> bias_params;
     std::unordered_map<const MapPoint*, std::array<double, 3>> map_point_params;
 
     // Add pose parameters
     for (const auto& frame_config : frames) {
         frame_params.emplace(frame_config.frame, pack_pose(*frame_config.frame));
+        velocity_params.emplace(frame_config.frame, pack_velocity(*frame_config.frame));
+        bias_params.emplace(frame_config.frame, pack_bias(*frame_config.frame));
     }
 
     // Points observed by the frames being optimized become free parameters
@@ -208,9 +300,43 @@ bool bundle_adjust(const std::vector<FrameConfig>& frames, const Camera& camera,
                                      map_point_params[&match.point].data());
         }
     }
+
+    if (inertial.usable()) {
+        for (size_t i = 0; i + 1 < frames.size(); i++) {
+            Frame* prev_frame = frames[i].frame;
+            Frame* next_frame = frames[i + 1].frame;
+            const double from = inertial.time_of(prev_frame->index());
+            const double to = inertial.time_of(next_frame->index());
+
+            const std::vector<imu::Sample> samples = inertial.stream->between(from, to);
+            if (samples.size() < 2) {
+                continue;
+            }
+            const imu::Preintegrated summary = imu::preintegrate(samples, inertial.noise, prev_frame->inertial().bias);
+
+            problem.AddResidualBlock(imu_preintegration(summary, inertial.gravity),
+                                     nullptr,
+                                     frame_params[prev_frame].data(),
+                                     velocity_params[prev_frame].data(),
+                                     bias_params[prev_frame].data(),
+                                     frame_params[next_frame].data(),
+                                     velocity_params[next_frame].data());
+            problem.AddResidualBlock(imu_bias_random_walk(summary.duration, inertial.noise),
+                                     nullptr,
+                                     bias_params[prev_frame].data(),
+                                     bias_params[next_frame].data());
+        }
+    }
+
     for (auto& [frame, params] : frame_params) {
-        if (frames_to_optimize.find(frame) == frames_to_optimize.end() && problem.HasParameterBlock(params.data())) {
+        const bool fixed = frames_to_optimize.find(frame) == frames_to_optimize.end();
+        if (fixed && problem.HasParameterBlock(params.data())) {
             problem.SetParameterBlockConstant(params.data());
+        }
+        for (double* block : {velocity_params[frame].data(), bias_params[frame].data()}) {
+            if (fixed && problem.HasParameterBlock(block)) {
+                problem.SetParameterBlockConstant(block);
+            }
         }
     }
 
@@ -220,6 +346,7 @@ bool bundle_adjust(const std::vector<FrameConfig>& frames, const Camera& camera,
     for (const auto& frame_config : frames) {
         if (frames_to_optimize.find(frame_config.frame) != frames_to_optimize.end()) {
             unpack_pose(frame_params[frame_config.frame], *frame_config.frame);
+            unpack_inertial(velocity_params[frame_config.frame], bias_params[frame_config.frame], *frame_config.frame);
         }
     }
     for (auto& point : map) {

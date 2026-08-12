@@ -10,6 +10,7 @@ class Frame;
 class Trajectory {
   public:
     void record(const Frame& frame, const Frame* reference);
+    void rescale(float scale);
 
     Eigen::Matrix4f pose_at(size_t index) const;
     size_t size() const;

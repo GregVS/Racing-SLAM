@@ -1,5 +1,8 @@
 #pragma once
 
+#include "ImuStream.h"
+#include "Optimization.h"
+
 #include <memory>
 #include <opencv2/opencv.hpp>
 
@@ -36,6 +39,9 @@ class Tracker {
     bool has_last_frame() const;
     void set_last_frame(const std::shared_ptr<Frame>& frame);
 
+    void set_inertial(const imu::Stream* stream);
+    void set_inertial_input(const optimization::InertialInput* input);
+
   private:
     std::pair<ExtractedFeatures, std::vector<FeatureMatch>> track_features(const cv::Mat& image);
     std::vector<FeatureMatch> initial_pose_estimate(Frame& frame,
@@ -47,15 +53,30 @@ class Tracker {
     void match_with_map(Frame& frame);
     void optimize_pose(Frame& frame);
 
+    /** Based on gyroscope */
+    optimization::RotationPrior rotation_prior(const Frame& frame) const;
+
+    /** Whichever of the two the gyroscope can supply for this frame, and only ever one of them. */
+    optimization::InertialConstraint inertial_constraint(const Frame& frame) const;
+
+    /** Inertial estimate relative to the previous frame */
+    optimization::InertialDelta inertial_step(const Frame& frame) const;
+
     const Camera& m_camera;
     const cv::Mat& m_static_mask;
     const features::BaseFeatureExtractor& m_feature_extractor;
     const SlamConfig& m_config;
+    const imu::Stream* m_inertial = nullptr;
+    const optimization::InertialInput* m_inertial_input = nullptr;
+
+    /** Initial pose estimate from inertial data */
+    bool seed_pose_from_inertial(Frame& frame, float step_length);
     Map& m_map;
     MapMatcher m_map_matcher;
 
     TrackStore m_tracks;
     std::shared_ptr<Frame> m_last_frame;
+    const Frame* m_last_key_frame = nullptr;
 };
 
 } // namespace slam

@@ -4,6 +4,7 @@
 #include <opencv2/opencv.hpp>
 
 #include "Camera.h"
+#include "ImuStream.h"
 #include "Map.h"
 #include "VideoLoader.h"
 #include "features/FeatureExtractor.h"
@@ -26,6 +27,7 @@ InitializationResult initialize_map(VideoLoader& video_loader,
                                     const cv::Mat& static_mask,
                                     const features::BaseFeatureExtractor& feature_extractor,
                                     const SlamConfig& config,
-                                    Map& map);
+                                    Map& map,
+                                    const imu::Stream* inertial = nullptr);
 
 } // namespace slam

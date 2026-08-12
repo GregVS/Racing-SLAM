@@ -5,6 +5,7 @@
 
 #include "Camera.h"
 #include "Map.h"
+#include "Optimization.h"
 #include "TrackStore.h"
 #include "Trajectory.h"
 
@@ -19,7 +20,7 @@ struct FrameDiagnostics;
  * adjustment and point culling */
 class Mapper {
   public:
-    Mapper(const Camera& camera, const SlamConfig& config, Map& map);
+    Mapper(const Camera& camera, const SlamConfig& config, Map& map, const optimization::InertialInput& inertial);
 
     bool needs_key_frame(const Frame& frame, const TrackStore& tracks) const;
 
@@ -42,12 +43,16 @@ class Mapper {
                             TrackStore& tracks,
                             const Trajectory& trajectory,
                             FrameDiagnostics& diagnostics);
+
+    /** Initial inertial state estimate for new key frame */
+    void seed_inertial_state(KeyFrame& key_frame) const;
     void bundle_adjust(KeyFrame& key_frame);
     void cull_points(FrameDiagnostics& diagnostics);
 
     const Camera& m_camera;
     const SlamConfig& m_config;
     Map& m_map;
+    const optimization::InertialInput& m_inertial;
     std::vector<std::shared_ptr<KeyFrame>> m_key_frames;
 };
 

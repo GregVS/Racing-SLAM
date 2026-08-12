@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "Frame.h"
+#include "Imu.h"
 #include "Optimization.h"
 #include "PoseEstimation.h"
 #include "Slam.h"
@@ -34,7 +35,8 @@ InitializationResult initialize_map(VideoLoader& video_loader,
                                     const cv::Mat& static_mask,
                                     const features::BaseFeatureExtractor& feature_extractor,
                                     const SlamConfig& config,
-                                    Map& map)
+                                    Map& map,
+                                    const imu::Stream* inertial)
 {
     size_t next_index = 0;
     auto anchor_image = video_loader.get_next_frame();
@@ -138,7 +140,35 @@ InitializationResult initialize_map(VideoLoader& video_loader,
             current_features.keypoints.push_back(keypoint);
             current_features.descriptors.push_back(anchor_features.descriptors.row(origin[i]));
         }
-        auto pose_estimate = pose::estimate_pose(anchor_features, current_features, chain_matches, camera);
+
+        pose::PoseEstimate pose_estimate;
+        bool used_inertial_rotation = false;
+        if (inertial != nullptr && config.seconds_per_frame > 0.0F) {
+            // When IMU available, use its rotation to estimate the pose
+            const double from = static_cast<double>(anchor_index) * config.seconds_per_frame;
+            const double to = static_cast<double>(frame_index) * config.seconds_per_frame;
+            const std::vector<imu::Sample> samples = inertial->between(from, to);
+            if (samples.size() >= 2) {
+                const Eigen::Matrix3f rotation = imu::integrate_rotation(samples).transpose().cast<float>();
+                pose_estimate = pose::estimate_pose_with_known_rotation(
+                    anchor_features, current_features, chain_matches, camera, rotation);
+                used_inertial_rotation = !pose_estimate.inlier_matches.empty();
+            }
+        }
+        if (!used_inertial_rotation) {
+            pose_estimate = pose::estimate_pose(anchor_features, current_features, chain_matches, camera);
+        } else {
+            // Compare inertial and visual estimates for debugging
+            const auto visual = pose::estimate_pose(anchor_features, current_features, chain_matches, camera);
+            const Eigen::Matrix3f disagreement =
+                visual.pose.block<3, 3>(0, 0).transpose() * pose_estimate.pose.block<3, 3>(0, 0);
+            const float degrees =
+                std::acos(std::clamp((disagreement.trace() - 1.0F) / 2.0F, -1.0F, 1.0F)) * 180.0F / 3.14159265F;
+            std::cout << "Init " << anchor_index << "->" << frame_index << ": inertial rotation, "
+                      << pose_estimate.inlier_matches.size() << " inliers of " << chain_matches.size()
+                      << ", disagrees with the five point estimate by " << degrees << " deg\n";
+        }
+
         std::vector<Eigen::Vector2f> anchor_points;
         std::vector<Eigen::Vector2f> current_points;
         anchor_points.reserve(pose_estimate.inlier_matches.size());

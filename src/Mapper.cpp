@@ -35,8 +35,8 @@ constexpr float MAX_POINT_REPROJECTION_ERROR = 3.0F;
 
 } // namespace
 
-Mapper::Mapper(const Camera& camera, const SlamConfig& config, Map& map)
-    : m_camera(camera), m_config(config), m_map(map)
+Mapper::Mapper(const Camera& camera, const SlamConfig& config, Map& map, const optimization::InertialInput& inertial)
+    : m_camera(camera), m_config(config), m_map(map), m_inertial(inertial)
 {
 }
 
@@ -113,6 +113,7 @@ Mapper::insert(Frame&& frame, TrackStore& tracks, const Trajectory& trajectory, 
     if (m_config.triangulate_points) {
         time_it("Triangulate tracks", [&]() { triangulate_tracks(*key_frame, tracks, trajectory, diagnostics); });
     }
+    seed_inertial_state(*key_frame);
     if (m_config.bundle_adjust) {
         bundle_adjust(*key_frame);
     }
@@ -246,6 +247,26 @@ void Mapper::triangulate_tracks(KeyFrame& key_frame,
               << ", topped up " << topped_up << '\n';
 }
 
+void Mapper::seed_inertial_state(KeyFrame& key_frame) const
+{
+    if (!m_inertial.usable() || m_key_frames.empty()) {
+        return;
+    }
+    const KeyFrame& previous = *m_key_frames.back();
+    const double from = m_inertial.time_of(previous.index());
+    const double to = m_inertial.time_of(key_frame.index());
+    const std::vector<imu::Sample> samples = m_inertial.stream->between(from, to);
+    if (samples.size() < 2) {
+        return;
+    }
+
+    const imu::Preintegrated summary = imu::preintegrate(samples, m_inertial.noise, previous.inertial().bias);
+    InertialState state;
+    state.velocity = imu::predict(inertial_state(previous), summary, m_inertial.gravity).velocity;
+    state.bias = previous.inertial().bias;
+    key_frame.set_inertial(state);
+}
+
 void Mapper::bundle_adjust(KeyFrame& key_frame)
 {
     auto window = optimization::build_local_window(m_key_frames, key_frame, BA_WINDOW);
@@ -259,7 +280,7 @@ void Mapper::bundle_adjust(KeyFrame& key_frame)
         }
     }
 
-    time_it("Bundle adjustment", [&]() { optimization::bundle_adjust(window, m_camera, m_map); });
+    time_it("Bundle adjustment", [&]() { optimization::bundle_adjust(window, m_camera, m_map, m_inertial); });
 
     // Reproject single-observation points excluded from optimization back to their relative locations
     for (const auto& [frame, before] : anchors) {

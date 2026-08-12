@@ -46,6 +46,37 @@ void Frame::set_pose(const Eigen::Matrix4f& pose)
     m_pose = pose;
 }
 
+const InertialState& Frame::inertial() const
+{
+    return m_inertial;
+}
+
+void Frame::set_inertial(const InertialState& inertial)
+{
+    m_inertial = inertial;
+}
+
+imu::State inertial_state(const Frame& frame)
+{
+    imu::State state;
+    state.rotation = frame.pose().block<3, 3>(0, 0).transpose().cast<double>();
+    state.position = frame.camera_center().cast<double>();
+    state.velocity = frame.inertial().velocity;
+    return state;
+}
+
+void set_inertial_state(Frame& frame, const imu::State& state)
+{
+    Eigen::Matrix4f pose = Eigen::Matrix4f::Identity();
+    pose.block<3, 3>(0, 0) = state.rotation.transpose().cast<float>();
+    pose.block<3, 1>(0, 3) = -pose.block<3, 3>(0, 0) * state.position.cast<float>();
+    frame.set_pose(pose);
+
+    InertialState inertial = frame.inertial();
+    inertial.velocity = state.velocity;
+    frame.set_inertial(inertial);
+}
+
 void Frame::add_map_match(const MapPointMatch& match)
 {
     if (m_map_matches[match.keypoint_index] == nullptr) {

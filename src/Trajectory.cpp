@@ -14,6 +14,13 @@ void Trajectory::record(const Frame& frame, const Frame* reference)
     m_entries[frame.index()] = {reference, reference ? frame.pose() * reference->pose().inverse() : frame.pose()};
 }
 
+void Trajectory::rescale(float scale)
+{
+    for (Entry& entry : m_entries) {
+        entry.relative.block<3, 1>(0, 3) *= scale;
+    }
+}
+
 Eigen::Matrix4f Trajectory::pose_at(size_t index) const
 {
     const auto& entry = m_entries[index];

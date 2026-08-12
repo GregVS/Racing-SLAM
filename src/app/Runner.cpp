@@ -7,6 +7,7 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <stdexcept>
 #include <yaml-cpp/yaml.h>
 
 #include "../Camera.h"
@@ -34,6 +35,28 @@ Camera load_camera(const YAML::Node& config, VideoLoader& video_loader)
     auto cy = config["cy"] ? config["cy"].as<float>() : video_loader.get_height() / 2;
 
     return {fx, fy, cx, cy, video_loader.get_width(), video_loader.get_height()};
+}
+
+void load_imu(const YAML::Node& node, SlamConfig& config)
+{
+    if (!node) {
+        return;
+    }
+    if (!node.IsMap()) {
+        throw std::runtime_error("imu: expects a block with a data: path, not a bare path");
+    }
+    config.imu_path = node["data"].as<std::string>();
+
+    const auto density = [&node](const char* key, double fallback) {
+        return node[key] ? node[key].as<double>() : fallback;
+    };
+    const imu::NoiseDensity modelled;
+    config.imu_noise.gyro = density("gyroscope_noise_density", modelled.gyro);
+    config.imu_noise.accel = density("accelerometer_noise_density", modelled.accel);
+    config.imu_noise.gyro_bias = density("gyroscope_random_walk", modelled.gyro_bias);
+    config.imu_noise.accel_bias = density("accelerometer_random_walk", modelled.accel_bias);
+    config.imu_noise_inflation = density("noise_inflation", config.imu_noise_inflation);
+    config.attitude_error_density = density("attitude_error_density", config.attitude_error_density);
 }
 
 Setup load_setup(const YAML::Node& config)
@@ -182,6 +205,8 @@ int run(const Options& options)
         .essential_matrix_estimation = true,
         .seconds_per_frame = 1.0F / fps,
     };
+    config.inertial_pose_seed = yaml["inertial_pose_seed"] ? yaml["inertial_pose_seed"].as<bool>() : true;
+    load_imu(yaml["imu"], config);
     Slam slam(setup.video_loader, setup.camera, setup.mask, std::make_unique<features::OrbFeatureExtractor>(), config);
     slam.initialize();
 

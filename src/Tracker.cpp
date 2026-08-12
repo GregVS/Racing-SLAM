@@ -1,5 +1,7 @@
 #include "Tracker.h"
 
+#include "Imu.h"
+
 #include "Frame.h"
 #include "Helpers.h"
 #include "MotionModel.h"
@@ -67,6 +69,8 @@ std::shared_ptr<Frame> Tracker::track(const cv::Mat& image,
                                       KeyFrame& last_key_frame,
                                       size_t num_key_frames)
 {
+    m_last_key_frame = &last_key_frame;
+
     ExtractedFeatures features;
     std::vector<FeatureMatch> tracked;
     time_it("Track features", [&]() { std::tie(features, tracked) = track_features(image); });
@@ -156,7 +160,8 @@ std::vector<FeatureMatch> Tracker::initial_pose_estimate(Frame& frame,
                                                          size_t num_key_frames)
 {
     if (m_config.essential_matrix_estimation || num_key_frames < 2) {
-        auto pose_estimate = pose::estimate_pose(m_last_frame->features(), frame.features(), matches, m_camera);
+        pose::PoseEstimate pose_estimate =
+            pose::estimate_pose(m_last_frame->features(), frame.features(), matches, m_camera);
         auto index = m_last_frame->index();
         if (index >= 1 && index < trajectory.size()) {
             float last_step = (motion::camera_center(trajectory.pose_at(index)) -
@@ -173,10 +178,16 @@ std::vector<FeatureMatch> Tracker::initial_pose_estimate(Frame& frame,
             if (scaled.block<3, 1>(0, 3).norm() > 1e-6F && last_step > 1e-6F) {
                 scaled.block<3, 1>(0, 3) *= last_step / scaled.block<3, 1>(0, 3).norm();
                 frame.set_pose(scaled * m_last_frame->pose());
+                if (m_config.inertial_pose_seed) {
+                    seed_pose_from_inertial(frame, last_step);
+                }
                 return pose_estimate.inlier_matches;
             }
         }
         frame.set_pose(pose_estimate.pose * m_last_frame->pose());
+        if (m_config.inertial_pose_seed) {
+            seed_pose_from_inertial(frame, 0.0F);
+        }
         return pose_estimate.inlier_matches;
     }
     frame.set_pose(m_last_frame->pose());
@@ -236,6 +247,58 @@ void Tracker::match_with_map(Frame& frame)
     std::cout << "Number of map matches: " << map_matches.size() << '\n';
 }
 
+optimization::RotationPrior Tracker::rotation_prior(const Frame& frame) const
+{
+    optimization::RotationPrior prior;
+    if (m_inertial == nullptr || m_inertial_input == nullptr || m_config.seconds_per_frame <= 0.0F ||
+        m_last_frame == nullptr) {
+        return prior;
+    }
+    const double from = static_cast<double>(m_last_frame->index()) * m_config.seconds_per_frame;
+    const double to = static_cast<double>(frame.index()) * m_config.seconds_per_frame;
+    const std::vector<imu::Sample> samples = m_inertial->between(from, to);
+    if (samples.size() < 2 || to <= from) {
+        return prior;
+    }
+
+    prior.predicted =
+        imu::integrate_rotation(samples).transpose() * m_last_frame->pose().block<3, 3>(0, 0).cast<double>();
+    prior.sigma_radians = m_inertial_input->attitude_error_density * std::sqrt(to - from);
+    return prior;
+}
+
+optimization::InertialDelta Tracker::inertial_step(const Frame& frame) const
+{
+    optimization::InertialDelta step;
+    if (m_inertial_input == nullptr || !m_inertial_input->usable() || m_last_frame == nullptr) {
+        return step;
+    }
+    const Frame* anchor = m_last_key_frame != nullptr && m_last_key_frame->index() < frame.index() ? m_last_key_frame
+                                                                                                   : m_last_frame.get();
+    const double from = m_inertial_input->time_of(anchor->index());
+    const double to = m_inertial_input->time_of(frame.index());
+    const std::vector<imu::Sample> samples = m_inertial_input->stream->between(from, to);
+    if (samples.size() < 2) {
+        return step;
+    }
+    step.previous = anchor;
+    step.summary = imu::preintegrate(samples, m_inertial_input->noise, anchor->inertial().bias);
+    step.gravity = m_inertial_input->gravity;
+    step.noise = m_inertial_input->noise;
+    return step;
+}
+
+optimization::InertialConstraint Tracker::inertial_constraint(const Frame& frame) const
+{
+    if (const optimization::InertialDelta step = inertial_step(frame); step.enabled()) {
+        return step;
+    }
+    if (const optimization::RotationPrior prior = rotation_prior(frame); prior.enabled()) {
+        return prior;
+    }
+    return {};
+}
+
 void Tracker::optimize_pose(Frame& frame)
 {
     if (!m_config.optimize_pose) {
@@ -246,13 +309,71 @@ void Tracker::optimize_pose(Frame& frame)
     }
 
     Eigen::Matrix4f before = frame.pose();
-    bool optimized = optimization::refine_pose(frame, m_camera);
+
+    bool optimized = optimization::refine_pose(frame, m_camera, inertial_constraint(frame));
     if (!optimized || !motion::is_rotation_plausible(m_last_frame->pose(), frame.pose(), m_config.seconds_per_frame)) {
         frame.set_pose(before);
         if (optimized) {
             std::cout << "Pose optimization rolled back by temporal motion bound\n";
         }
     }
+}
+
+} // namespace slam
+
+namespace slam {
+
+void Tracker::set_inertial(const imu::Stream* stream)
+{
+    m_inertial = stream;
+}
+
+void Tracker::set_inertial_input(const optimization::InertialInput* input)
+{
+    m_inertial_input = input;
+}
+
+bool Tracker::seed_pose_from_inertial(Frame& frame, float step_length)
+{
+    if (m_inertial == nullptr || m_config.seconds_per_frame <= 0.0F || m_last_frame == nullptr) {
+        return false;
+    }
+    const double from = static_cast<double>(m_last_frame->index()) * m_config.seconds_per_frame;
+    const double to = static_cast<double>(frame.index()) * m_config.seconds_per_frame;
+    const std::vector<imu::Sample> samples = m_inertial->between(from, to);
+    if (samples.size() < 2) {
+        return false;
+    }
+
+    const Frame* anchor = m_last_key_frame != nullptr && m_last_key_frame->index() < frame.index() ? m_last_key_frame
+                                                                                                   : m_last_frame.get();
+    if (m_inertial_input != nullptr && m_inertial_input->usable()) {
+        // IMU is aligned
+        const std::vector<imu::Sample> span =
+            m_inertial->between(m_inertial_input->time_of(anchor->index()), m_inertial_input->time_of(frame.index()));
+        if (span.size() >= 2) {
+            const imu::Preintegrated summary =
+                imu::preintegrate(span, m_inertial_input->noise, anchor->inertial().bias);
+            set_inertial_state(frame, imu::predict(inertial_state(*anchor), summary, m_inertial_input->gravity));
+            return true;
+        }
+    }
+
+    // IMU is not aligned yet, only rotation can be used
+    if (step_length <= 0.0F) {
+        return false;
+    }
+    const Eigen::Matrix3f previous_world_to_camera = m_last_frame->pose().block<3, 3>(0, 0);
+    const Eigen::Matrix3f increment = imu::integrate_rotation(samples).cast<float>();
+    const Eigen::Matrix3f world_to_camera = increment.transpose() * previous_world_to_camera;
+    const Eigen::Vector3f forward = previous_world_to_camera.transpose().col(2);
+    const Eigen::Vector3f center = m_last_frame->camera_center() + step_length * forward;
+
+    Eigen::Matrix4f pose = Eigen::Matrix4f::Identity();
+    pose.block<3, 3>(0, 0) = world_to_camera;
+    pose.block<3, 1>(0, 3) = -world_to_camera * center;
+    frame.set_pose(pose);
+    return true;
 }
 
 } // namespace slam
