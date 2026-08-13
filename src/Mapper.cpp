@@ -260,7 +260,8 @@ void Mapper::seed_inertial_state(KeyFrame& key_frame) const
         return;
     }
 
-    const imu::Preintegrated summary = imu::preintegrate(samples, m_inertial.noise, previous.inertial().bias);
+    const imu::Preintegrated summary =
+        imu::preintegrate(samples, m_inertial.noise, previous.inertial().bias);
     InertialState state;
     state.velocity = imu::predict(inertial_state(previous), summary, m_inertial.gravity).velocity;
     state.bias = previous.inertial().bias;

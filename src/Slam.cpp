@@ -1,6 +1,7 @@
 #include "Slam.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "Frame.h"
 #include "Helpers.h"
@@ -15,12 +16,14 @@ namespace {
 constexpr size_t MAX_TRACK_SIGHTINGS = 100;
 
 // Alignment parameters
-constexpr double ALIGNMENT_SAMPLE_SECONDS = 1.0; // Seconds between key frames sampled for alignment
+constexpr double ALIGNMENT_SAMPLE_SECONDS[] = {1.0, 0.5}; // Spacings to try in order
 constexpr size_t ALIGNMENT_SAMPLES = 12;
 constexpr size_t MIN_ALIGNMENT_SAMPLES = ALIGNMENT_SAMPLES;
 constexpr double MAX_GRAVITY_MAGNITUDE_ERROR = 1.0;
 constexpr double MAX_ALIGNMENT_RESIDUAL = 2.0;
-constexpr double MAX_SCALE_UNCERTAINTY = 0.05; // Expressed as fraction
+constexpr double MAX_GRAVITY_DIRECTION_UNCERTAINTY = 0.05; // Radians
+constexpr double MAX_SCALE_UNCERTAINTY = 0.05;             // Expressed as fraction
+constexpr double REFINEMENT_UNCERTAINTY_RATIO = 0.5;       // When scale should be re-aligned
 
 } // namespace
 
@@ -66,25 +69,20 @@ double Slam::metric_scale() const
     return m_metric_scale;
 }
 
-void Slam::align_to_metric_scale()
+Slam::AlignmentAttempt Slam::solve_alignment(double spacing, imu::Alignment& alignment, std::vector<size_t>& sampled)
 {
     const auto& key_frames = m_mapper.key_frames();
-    if (!m_imu || key_frames.empty()) {
-        return;
-    }
-
-    // Sample recent key frames every ALIGNMENT_SAMPLE_SECONDS
-    std::vector<size_t> sampled{key_frames.size() - 1};
+    sampled.assign(1, key_frames.size() - 1);
     double last_time = m_inertial.time_of(key_frames.back()->index());
     for (size_t i = key_frames.size() - 1; i-- > 0 && sampled.size() < ALIGNMENT_SAMPLES;) {
         const double at = m_inertial.time_of(key_frames[i]->index());
-        if (last_time - at >= ALIGNMENT_SAMPLE_SECONDS) {
+        if (last_time - at >= spacing) {
             sampled.push_back(i);
             last_time = at;
         }
     }
     if (sampled.size() < MIN_ALIGNMENT_SAMPLES) {
-        return;
+        return AlignmentAttempt::NotEnoughSamples;
     }
     std::reverse(sampled.begin(), sampled.end());
 
@@ -103,42 +101,84 @@ void Slam::align_to_metric_scale()
         }
     }
 
-    const imu::Alignment alignment = imu::align(rotations, positions, times, summaries);
-    std::cout << "Inertial alignment over " << rotations.size() << " key frames spanning "
-              << times.back() - times.front() << " s: scale " << alignment.scale << " m per unit, gravity ["
-              << alignment.gravity.transpose() << "] magnitude " << alignment.gravity.norm() << ", residual "
-              << alignment.residual << " m over " << alignment.triples << " triples, scale uncertainty "
-              << 100.0 * alignment.scale_uncertainty << " %\n";
+    alignment = imu::align(rotations, positions, times, summaries);
+    std::cout << "Inertial alignment at " << spacing << " s spacing over " << rotations.size()
+              << " key frames spanning " << times.back() - times.front() << " s: scale " << alignment.scale
+              << " m per unit, gravity [" << alignment.gravity.transpose() << "] magnitude " << alignment.gravity.norm()
+              << ", residual " << alignment.residual << " m over " << alignment.triples
+              << " triples, scale uncertainty " << 100.0 * alignment.scale_uncertainty
+              << " %, gravity direction uncertainty " << alignment.gravity_uncertainty * 180.0 / M_PI << " deg\n";
+
     if (!alignment.valid) {
         std::cout << "Rejected: the solve did not produce a usable scale\n";
-        return;
+        return AlignmentAttempt::Rejected;
     }
     if (std::abs(alignment.gravity_magnitude_error) > MAX_GRAVITY_MAGNITUDE_ERROR) {
         std::cout << "Rejected: recovered gravity is not plausible\n";
-        return;
+        return AlignmentAttempt::Rejected;
+    }
+    if (alignment.gravity_uncertainty > MAX_GRAVITY_DIRECTION_UNCERTAINTY) {
+        std::cout << "Rejected: the motion so far does not determine which way is down\n";
+        return AlignmentAttempt::Rejected;
     }
     if (alignment.residual > MAX_ALIGNMENT_RESIDUAL) {
         std::cout << "Rejected: no single scale fits this map\n";
-        return;
+        return AlignmentAttempt::Rejected;
     }
     if (alignment.scale_uncertainty > MAX_SCALE_UNCERTAINTY) {
         std::cout << "Rejected: the motion so far does not determine scale\n";
-        return;
+        return AlignmentAttempt::Rejected;
     }
+    return AlignmentAttempt::Accepted;
+}
 
-    // Rescale things
-    const auto scale = static_cast<float>(alignment.scale);
+void Slam::apply_scale(float scale)
+{
     for (auto& point : m_map) {
         point.set_position(point.position() * scale);
     }
     for (Eigen::Vector3f& position : m_diagnostics.culled) {
         position *= scale;
     }
-    for (const auto& key_frame : key_frames) {
+    for (const auto& key_frame : m_mapper.key_frames()) {
         Eigen::Matrix4f pose = key_frame->pose();
         pose.block<3, 1>(0, 3) *= scale;
         key_frame->set_pose(pose);
     }
+    m_trajectory.rescale(scale);
+}
+
+void Slam::align_to_metric_scale()
+{
+    const auto& key_frames = m_mapper.key_frames();
+    if (!m_imu || key_frames.empty()) {
+        return;
+    }
+
+    imu::Alignment alignment;
+    std::vector<size_t> sampled;
+    double chosen_spacing = 0.0;
+    for (const double spacing : ALIGNMENT_SAMPLE_SECONDS) {
+        const AlignmentAttempt attempt = solve_alignment(spacing, alignment, sampled);
+        if (attempt == AlignmentAttempt::NotEnoughSamples) {
+            continue;
+        }
+        if (attempt == AlignmentAttempt::Accepted) {
+            chosen_spacing = spacing;
+            break;
+        }
+    }
+    if (chosen_spacing == 0.0) {
+        return;
+    }
+    if (m_inertial.aligned() && alignment.scale_uncertainty > REFINEMENT_UNCERTAINTY_RATIO * m_scale_uncertainty) {
+        return;
+    }
+    std::cout << "Alignment accepted at " << chosen_spacing << " s spacing, scale " << alignment.scale
+              << ", uncertainty " << 100.0 * alignment.scale_uncertainty << " % against " << 100.0 * m_scale_uncertainty
+              << " % in force\n";
+
+    apply_scale(static_cast<float>(alignment.scale));
 
     std::vector<bool> from_solve(key_frames.size(), false);
     for (size_t k = 0; k < sampled.size(); k++) {
@@ -161,9 +201,9 @@ void Slam::align_to_metric_scale()
                          inertial_state(*key_frames[i]).rotation * summary.velocity;
         key_frames[i]->set_inertial(state);
     }
-    m_trajectory.rescale(scale);
 
     m_metric_scale = alignment.scale;
+    m_scale_uncertainty = alignment.scale_uncertainty;
     m_inertial.gravity = alignment.gravity;
     m_inertial.stream = &*m_imu;
     std::cout << "IMU alignment successful\n";
@@ -214,7 +254,7 @@ bool Slam::step()
         }
     });
 
-    if (new_key_frame && !m_inertial.aligned()) {
+    if (new_key_frame) {
         align_to_metric_scale();
     }
     m_tracker.set_last_frame(frame);

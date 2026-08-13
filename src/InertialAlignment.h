@@ -16,6 +16,7 @@ struct Alignment {
     std::vector<Eigen::Vector3d> velocities; // Metric velocity per key frame
 
     double gravity_magnitude_error = 0.0;
+    double gravity_uncertainty = 1.0; // Direction in radians
     double residual = 0.0;
 
     size_t triples = 0;

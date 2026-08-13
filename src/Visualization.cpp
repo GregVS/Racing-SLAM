@@ -49,12 +49,22 @@ void Visualization::run_threaded()
     std::thread([this]() { run(); }).detach();
 }
 
+namespace {
+
+float visual_scale(double meters_per_unit)
+{
+    return meters_per_unit > 0.0 ? static_cast<float>(1.0 / meters_per_unit) : 1.0F;
+}
+
+} // namespace
+
 void Visualization::push_frame(size_t frame_index,
                                const cv::Mat& image,
                                const std::vector<Eigen::Matrix4f>& poses,
                                const std::vector<Point>& points,
                                const std::vector<Eigen::Vector3f>& culled,
-                               const std::string& status)
+                               const std::string& status,
+                               double meters_per_unit)
 {
     Snapshot snapshot;
     snapshot.frame_index = frame_index;
@@ -63,6 +73,7 @@ void Visualization::push_frame(size_t frame_index,
     snapshot.points = points;
     snapshot.culled = culled;
     snapshot.status = status;
+    snapshot.meters_per_unit = meters_per_unit;
 
     std::lock_guard<std::mutex> lock(m_render_lock);
     m_history.push_back(std::move(snapshot));
@@ -118,10 +129,13 @@ bool Visualization::wait_for_step()
 
 void Visualization::draw_camera_poses(const Snapshot& snapshot)
 {
+    const float scale = visual_scale(snapshot.meters_per_unit);
     const size_t n = snapshot.poses.size();
     for (size_t i = 0; i < n; ++i) {
         const float camera_size = 1.5f;
-        const Eigen::Matrix4f inverse_pose = snapshot.poses[i].inverse();
+        Eigen::Matrix4f pose = snapshot.poses[i];
+        pose.block<3, 1>(0, 3) *= scale;
+        const Eigen::Matrix4f inverse_pose = pose.inverse();
 
         glPushMatrix();
         glMultMatrixf(inverse_pose.data());
@@ -143,11 +157,13 @@ void Visualization::draw_camera_poses(const Snapshot& snapshot)
 
 void Visualization::draw_points(const Snapshot& snapshot)
 {
+    const float scale = visual_scale(snapshot.meters_per_unit);
     glPointSize(3);
     glBegin(GL_POINTS);
     for (const auto& point : snapshot.points) {
         glColor3ub(point.color[0], point.color[1], point.color[2]);
-        glVertex3f(point.position[0], point.position[1], point.position[2]);
+        const Eigen::Vector3f position = point.position * scale;
+        glVertex3f(position[0], position[1], position[2]);
     }
     glEnd();
 
@@ -155,7 +171,8 @@ void Visualization::draw_points(const Snapshot& snapshot)
     glBegin(GL_POINTS);
     glColor3ub(255, 0, 0);
     for (const auto& position : snapshot.culled) {
-        glVertex3f(position[0], position[1], position[2]);
+        const Eigen::Vector3f scaled = position * scale;
+        glVertex3f(scaled[0], scaled[1], scaled[2]);
     }
     glEnd();
 }

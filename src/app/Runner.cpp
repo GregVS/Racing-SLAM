@@ -120,7 +120,8 @@ void run_viewer(Slam& slam, const Camera& camera)
         status << "map " << diagnostics.map_size << "  matches " << frame.num_map_matches() << "  culled "
                << diagnostics.culled.size() << "  poisoned " << diagnostics.poisoned << "  new "
                << diagnostics.triangulated;
-        visualization.push_frame(frame.index(), render, poses, points, diagnostics.culled, status.str());
+        visualization.push_frame(
+            frame.index(), render, poses, points, diagnostics.culled, status.str(), slam.metric_scale());
 
         std::cout << "Reprojection error: " << slam.reprojection_error() << '\n';
 

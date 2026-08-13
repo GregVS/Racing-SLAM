@@ -3,8 +3,11 @@
 #include <optional>
 #include <string>
 
+#include <Eigen/Dense>
+
 #include "Camera.h"
 #include "ImuStream.h"
+#include "InertialAlignment.h"
 #include "Map.h"
 #include "Mapper.h"
 #include "Optimization.h"
@@ -78,6 +81,7 @@ class Slam {
     std::optional<imu::Stream> m_imu;
     optimization::InertialInput m_inertial;
     double m_metric_scale = 0.0;
+    double m_scale_uncertainty = 0.0;
     Tracker m_tracker;
     Mapper m_mapper;
     FrameDiagnostics m_diagnostics;
@@ -85,6 +89,9 @@ class Slam {
     void record_pose(const Frame& frame);
 
     /** Align map to metric scale using IMU data */
+    enum class AlignmentAttempt { NotEnoughSamples, Rejected, Accepted };
+    AlignmentAttempt solve_alignment(double spacing, imu::Alignment& alignment, std::vector<size_t>& sampled);
+    void apply_scale(float scale);
     void align_to_metric_scale();
 };
 

@@ -27,7 +27,8 @@ class Visualization {
                     const std::vector<Eigen::Matrix4f>& poses,
                     const std::vector<Point>& points,
                     const std::vector<Eigen::Vector3f>& culled,
-                    const std::string& status);
+                    const std::string& status,
+                    double meters_per_unit = 0.0);
     bool wait_for_step();
     void initialize(int width = 1024, int height = 1024);
     void run();
@@ -43,6 +44,7 @@ class Visualization {
         std::vector<Point> points;
         std::vector<Eigen::Vector3f> culled;
         std::string status;
+        double meters_per_unit = 0.0; // zero before IMU alignment
     };
 
     void draw_camera_poses(const Snapshot& snapshot);
