@@ -25,10 +25,12 @@ struct SlamConfig {
     bool essential_matrix_estimation = true;
     float seconds_per_frame = 0.0F;
     std::string imu_path; // data.csv path
+    // T_SC: p_camera = T_SC * p_sensor.
+    Eigen::Matrix4d imu_to_camera = Eigen::Matrix4d::Identity();
     imu::NoiseDensity imu_noise;
     double imu_noise_inflation = 100.0; // Additional sensor noise
     double attitude_error_density = 2.76e-3;
-    bool inertial_pose_seed = true;     // Seed each frame's pose from inertial data
+    bool inertial_pose_seed = true; // Seed each frame's pose from inertial data
 };
 
 /** For visualization purposes */

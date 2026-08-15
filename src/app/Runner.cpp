@@ -37,6 +37,22 @@ Camera load_camera(const YAML::Node& config, VideoLoader& video_loader)
     return {fx, fy, cx, cy, video_loader.get_width(), video_loader.get_height()};
 }
 
+Eigen::Matrix4d load_transform(const YAML::Node& node, const std::string& name)
+{
+    if (!node) {
+        return Eigen::Matrix4d::Identity();
+    }
+    const YAML::Node& values = node.IsMap() ? node["data"] : node;
+    if (!values || !values.IsSequence() || values.size() != 16) {
+        throw std::runtime_error(name + ": expects 16 row-major numbers, or a block with a data: list of 16");
+    }
+    Eigen::Matrix4d transform;
+    for (int i = 0; i < 16; i++) {
+        transform(i / 4, i % 4) = values[i].as<double>();
+    }
+    return transform;
+}
+
 void load_imu(const YAML::Node& node, SlamConfig& config)
 {
     if (!node) {
@@ -46,6 +62,7 @@ void load_imu(const YAML::Node& node, SlamConfig& config)
         throw std::runtime_error("imu: expects a block with a data: path, not a bare path");
     }
     config.imu_path = node["data"].as<std::string>();
+    config.imu_to_camera = load_transform(node["T_SC"], "T_SC");
 
     const auto density = [&node](const char* key, double fallback) {
         return node[key] ? node[key].as<double>() : fallback;

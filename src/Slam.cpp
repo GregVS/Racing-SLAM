@@ -41,7 +41,7 @@ Slam::Slam(const VideoLoader& video_loader,
     if (m_config.imu_path.empty()) {
         return;
     }
-    m_imu = imu::Stream::load(m_config.imu_path);
+    m_imu = imu::Stream::load(m_config.imu_path, m_config.imu_to_camera);
     std::cout << "Loaded " << m_imu->size() << " imu samples spanning " << m_imu->first() << " to " << m_imu->last()
               << " s from " << m_config.imu_path << '\n';
 

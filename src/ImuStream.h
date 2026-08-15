@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Eigen/Dense>
 #include <string>
 #include <vector>
 
@@ -10,7 +11,8 @@ namespace slam::imu {
 class Stream {
   public:
     /** Reads EuRoC-format data.csv */
-    static Stream load(const std::string& csv_path);
+    static Stream load(const std::string& csv_path,
+                       const Eigen::Matrix4d& sensor_to_camera = Eigen::Matrix4d::Identity());
 
     /** Interval is [start, end] */
     std::vector<Sample> between(double start, double end) const;

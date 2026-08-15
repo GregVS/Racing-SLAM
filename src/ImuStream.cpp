@@ -32,6 +32,29 @@ bool parse_row(const std::string& line, Sample& sample)
     return true;
 }
 
+/** Lever arm adjustment for EuRoC */
+void move_to_camera(std::vector<Sample>& samples, const Eigen::Matrix4d& sensor_to_camera)
+{
+    const Eigen::Matrix3d rotation = sensor_to_camera.block<3, 3>(0, 0);
+    const Eigen::Vector3d lever = -rotation.transpose() * sensor_to_camera.block<3, 1>(0, 3);
+
+    std::vector<Eigen::Vector3d> angular_acceleration(samples.size(), Eigen::Vector3d::Zero());
+    for (size_t i = 1; i + 1 < samples.size(); i++) {
+        const double span = samples[i + 1].time - samples[i - 1].time;
+        if (span > 0.0) {
+            angular_acceleration[i] = (samples[i + 1].gyro - samples[i - 1].gyro) / span;
+        }
+    }
+
+    for (size_t i = 0; i < samples.size(); i++) {
+        const Eigen::Vector3d& gyro = samples[i].gyro;
+        const Eigen::Vector3d transported =
+            samples[i].accel + angular_acceleration[i].cross(lever) + gyro.cross(gyro.cross(lever));
+        samples[i].accel = rotation * transported;
+        samples[i].gyro = rotation * gyro;
+    }
+}
+
 Sample interpolate(const Sample& before, const Sample& after, double time)
 {
     const double span = after.time - before.time;
@@ -43,7 +66,7 @@ Sample interpolate(const Sample& before, const Sample& after, double time)
 
 } // namespace
 
-Stream Stream::load(const std::string& csv_path)
+Stream Stream::load(const std::string& csv_path, const Eigen::Matrix4d& sensor_to_camera)
 {
     std::ifstream csv(csv_path);
     if (!csv) {
@@ -60,6 +83,9 @@ Stream Stream::load(const std::string& csv_path)
     }
     if (stream.m_samples.size() < 2) {
         throw std::runtime_error("imu stream at " + csv_path + " holds less than two samples");
+    }
+    if (!sensor_to_camera.isIdentity(1e-12)) {
+        move_to_camera(stream.m_samples, sensor_to_camera);
     }
     return stream;
 }
