@@ -224,6 +224,9 @@ int run(const Options& options)
         .seconds_per_frame = 1.0F / fps,
     };
     config.inertial_pose_seed = yaml["inertial_pose_seed"] ? yaml["inertial_pose_seed"].as<bool>() : true;
+    if (yaml["vocabulary"]) {
+        config.vocabulary_path = yaml["vocabulary"].as<std::string>();
+    }
     load_imu(yaml["imu"], config);
     Slam slam(setup.video_loader, setup.camera, setup.mask, std::make_unique<features::OrbFeatureExtractor>(), config);
     slam.initialize();

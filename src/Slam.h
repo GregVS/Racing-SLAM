@@ -31,6 +31,7 @@ struct SlamConfig {
     double imu_noise_inflation = 100.0; // Additional sensor noise
     double attitude_error_density = 2.76e-3;
     bool inertial_pose_seed = true; // Seed each frame's pose from inertial data
+    std::string vocabulary_path;    // DBoW2 text vocabulary
 };
 
 /** For visualization purposes */
