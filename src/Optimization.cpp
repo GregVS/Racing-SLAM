@@ -319,6 +319,10 @@ bool bundle_adjust(const std::vector<FrameConfig>& frames,
         for (size_t i = 0; i + 1 < frames.size(); i++) {
             Frame* prev_frame = frames[i].frame;
             Frame* next_frame = frames[i + 1].frame;
+            // Only need IMU between frames being optimized
+            if (frames_to_optimize.count(prev_frame) == 0 || frames_to_optimize.count(next_frame) == 0) {
+                continue;
+            }
             const double from = inertial.time_of(prev_frame->index());
             const double to = inertial.time_of(next_frame->index());
 
