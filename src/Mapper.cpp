@@ -6,6 +6,7 @@
 #include "Frame.h"
 #include "Helpers.h"
 #include "LocalWindow.h"
+#include "MapPoint.h"
 #include "MotionModel.h"
 #include "Optimization.h"
 #include "Slam.h"
@@ -118,7 +119,7 @@ Mapper::insert(Frame&& frame, TrackStore& tracks, const Trajectory& trajectory, 
         bundle_adjust(*key_frame);
     }
     if (m_config.cull_points) {
-        time_it("Cull points", [&]() { cull_points(diagnostics); });
+        time_it("Cull points", [&]() { cull_points(diagnostics, *key_frame); });
     }
 
     m_key_frames.push_back(key_frame);
@@ -260,8 +261,7 @@ void Mapper::seed_inertial_state(KeyFrame& key_frame) const
         return;
     }
 
-    const imu::Preintegrated summary =
-        imu::preintegrate(samples, m_inertial.noise, previous.inertial().bias);
+    const imu::Preintegrated summary = imu::preintegrate(samples, m_inertial.noise, previous.inertial().bias);
     InertialState state;
     state.velocity = imu::predict(inertial_state(previous), summary, m_inertial.gravity).velocity;
     state.bias = previous.inertial().bias;
@@ -300,20 +300,32 @@ void Mapper::bundle_adjust(KeyFrame& key_frame)
     }
 }
 
-void Mapper::cull_points(FrameDiagnostics& diagnostics)
+void Mapper::cull_points(FrameDiagnostics& diagnostics, KeyFrame& key_frame)
 {
+    std::unordered_set<MapPoint*> local;
+    auto include_points = [&](const Frame& frame) {
+        for (const auto& match : frame.map_matches()) {
+            local.insert(&match.point);
+        }
+    };
+    size_t first = m_key_frames.size() > BA_WINDOW ? m_key_frames.size() - BA_WINDOW : 0;
+    for (size_t i = first; i < m_key_frames.size(); i++) {
+        include_points(*m_key_frames[i]);
+    }
+    include_points(key_frame);
+
     std::vector<MapPoint*> points_to_remove;
-    for (auto& point : m_map) {
+    for (MapPoint* point : local) {
         float error = 0.0;
         size_t num_projected = 0;
-        for (const auto& [frame, index] : point.observations()) {
-            auto projected = m_camera.project(frame->pose(), point.position());
+        for (const auto& [frame, index] : point->observations()) {
+            auto projected = m_camera.project(frame->pose(), point->position());
             auto image_point = Eigen::Vector2f(frame->keypoint(index).pt.x, frame->keypoint(index).pt.y);
             error += (projected - image_point).norm();
             num_projected++;
         }
         if (num_projected > 0 && error / static_cast<float>(num_projected) > MAX_POINT_REPROJECTION_ERROR) {
-            points_to_remove.push_back(&point);
+            points_to_remove.push_back(point);
         }
     }
 

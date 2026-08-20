@@ -47,7 +47,7 @@ class Mapper {
     /** Initial inertial state estimate for new key frame */
     void seed_inertial_state(KeyFrame& key_frame) const;
     void bundle_adjust(KeyFrame& key_frame);
-    void cull_points(FrameDiagnostics& diagnostics);
+    void cull_points(FrameDiagnostics& diagnostics, KeyFrame& key_frame);
 
     const Camera& m_camera;
     const SlamConfig& m_config;
