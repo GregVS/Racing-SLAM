@@ -24,7 +24,6 @@ constexpr double MAX_ALIGNMENT_RESIDUAL = 2.0;
 constexpr double MAX_GRAVITY_DIRECTION_UNCERTAINTY = 0.05; // Radians
 constexpr double MAX_SCALE_UNCERTAINTY = 0.05;             // Expressed as fraction
 constexpr double REFINEMENT_UNCERTAINTY_RATIO = 0.5;       // When scale should be re-aligned
-
 } // namespace
 
 Slam::Slam(const VideoLoader& video_loader,
@@ -279,7 +278,7 @@ bool Slam::step()
                     });
                 }
                 if (m_config.bundle_adjust) {
-                    m_mapper.bundle_adjust(query);
+                    m_mapper.bundle_adjust(query, true);
                 }
             }
         }

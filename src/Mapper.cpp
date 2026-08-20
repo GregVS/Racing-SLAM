@@ -1,6 +1,7 @@
 #include "Mapper.h"
 
 #include <algorithm>
+#include <unordered_map>
 #include <unordered_set>
 
 #include "Frame.h"
@@ -27,6 +28,8 @@ constexpr size_t MIN_SIGHTINGS_FOR_TRACK = 3;
 constexpr float MIN_TRACK_TRAVEL_PIXELS = 20.0F;
 
 constexpr size_t BA_WINDOW = MAX_KEY_FRAME_GAP;        // Must be at least MAX_KEY_FRAME_GAP
+constexpr size_t LOOP_COVISIBLE_KFS = BA_WINDOW;
+constexpr size_t MIN_LOOP_COVISIBLE = 15;
 constexpr float TRACK_MIN_PARALLAX_COSINE = 0.999848F; // 1 degree
 
 constexpr float ROTATION_PARALLAX_FACTOR = 0.20F;    // Requires higher parallax for higher rotation
@@ -34,6 +37,44 @@ constexpr size_t MIN_NEW_POINTS_PER_KEY_FRAME = 100; // Min quota that allows ac
 constexpr float ANY_PARALLAX_COSINE = 1.0F;
 constexpr float TRACK_MAX_REPROJECTION_ERROR = 4.0F;
 constexpr float MAX_POINT_REPROJECTION_ERROR = 3.0F;
+
+std::vector<KeyFrame*> loop_covisibles(KeyFrame& candidate)
+{
+    std::unordered_map<KeyFrame*, size_t> shared;
+    for (const auto& match : candidate.map_matches()) {
+        for (const auto& [observer, _] : match.point.observations()) {
+            if (observer != &candidate) {
+                shared[observer]++;
+            }
+        }
+    }
+    std::vector<std::pair<size_t, KeyFrame*>> ranked;
+    ranked.reserve(shared.size());
+    for (const auto& [key_frame, count] : shared) {
+        if (count >= MIN_LOOP_COVISIBLE) {
+            ranked.push_back({count, key_frame});
+        }
+    }
+    std::sort(ranked.begin(), ranked.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+
+    std::vector<KeyFrame*> result;
+    result.push_back(&candidate);
+    for (size_t i = 0; i < ranked.size() && i < LOOP_COVISIBLE_KFS; i++) {
+        result.push_back(ranked[i].second);
+    }
+    return result;
+}
+
+std::unordered_set<MapPoint*> loop_points(const std::vector<KeyFrame*>& key_frames)
+{
+    std::unordered_set<MapPoint*> points;
+    for (KeyFrame* key_frame : key_frames) {
+        for (const auto& match : key_frame->map_matches()) {
+            points.insert(&match.point);
+        }
+    }
+    return points;
+}
 
 } // namespace
 
@@ -132,7 +173,9 @@ Mapper::insert(Frame&& frame, TrackStore& tracks, const Trajectory& trajectory, 
     return key_frame;
 }
 
-void Mapper::fuse_match(KeyFrame& frame, const MapPointMatch& match, KeyFrame& candidate)
+void Mapper::fuse_match(KeyFrame& frame,
+                       const MapPointMatch& match,
+                       const std::unordered_set<MapPoint*>& old_points)
 {
     if (match.keypoint_index >= frame.features().keypoints.size()) {
         return;
@@ -146,10 +189,7 @@ void Mapper::fuse_match(KeyFrame& frame, const MapPointMatch& match, KeyFrame& c
         return;
     }
     MapPoint& discarded = frame.map_match(match.keypoint_index);
-    if (&discarded == &kept) {
-        return;
-    }
-    if (discarded.is_observed_by(&candidate)) {
+    if (&discarded == &kept || old_points.count(&discarded) != 0) {
         return;
     }
     m_map.fuse(kept, discarded);
@@ -157,19 +197,24 @@ void Mapper::fuse_match(KeyFrame& frame, const MapPointMatch& match, KeyFrame& c
 
 void Mapper::fuse_loop(KeyFrame& query, KeyFrame& candidate, const std::vector<MapPointMatch>& inliers)
 {
+    auto old_frames = loop_covisibles(candidate);
+    auto old_points = loop_points(old_frames);
+    std::unordered_set<const KeyFrame*> old_set(old_frames.begin(), old_frames.end());
+
     for (const auto& inlier : inliers) {
-        fuse_match(query, inlier, candidate);
+        fuse_match(query, inlier, old_points);
     }
 
+    std::vector<MapPoint*> sources(old_points.begin(), old_points.end());
     size_t first = m_key_frames.size() > BA_WINDOW ? m_key_frames.size() - BA_WINDOW : 0;
     for (size_t i = first; i < m_key_frames.size(); i++) {
         KeyFrame& frame = *m_key_frames[i];
-        if (&frame == &candidate) {
+        if (old_set.count(&frame) != 0) {
             continue;
         }
-        auto matches = m_map_matcher.match_for_fuse(frame, candidate);
+        auto matches = m_map_matcher.match_for_fuse(frame, sources);
         for (const auto& match : matches) {
-            fuse_match(frame, match, candidate);
+            fuse_match(frame, match, old_points);
         }
     }
 }
@@ -316,9 +361,9 @@ void Mapper::seed_inertial_state(KeyFrame& key_frame) const
     key_frame.set_inertial(state);
 }
 
-void Mapper::bundle_adjust(KeyFrame& key_frame)
+void Mapper::bundle_adjust(KeyFrame& key_frame, bool fix_oldest)
 {
-    auto window = optimization::build_local_window(m_key_frames, key_frame, BA_WINDOW);
+    auto window = optimization::build_local_window(m_key_frames, key_frame, BA_WINDOW, fix_oldest);
 
     // Store poses before optimization to reproject the single-observation points excluded from optimization
     std::vector<std::pair<Frame*, Eigen::Matrix4f>> anchors;

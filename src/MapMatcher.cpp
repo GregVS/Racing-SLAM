@@ -3,6 +3,7 @@
 #include "Camera.h"
 #include "Frame.h"
 #include "Map.h"
+#include "MapPoint.h"
 
 namespace slam {
 
@@ -113,11 +114,14 @@ std::vector<MapPointMatch> MapMatcher::match_key_frame(const Frame& frame, Map& 
     return match(frame, map, key_frame);
 }
 
-std::vector<MapPointMatch> MapMatcher::match_for_fuse(const Frame& frame, KeyFrame& source) const
+std::vector<MapPointMatch> MapMatcher::match_for_fuse(const Frame& frame, const std::vector<MapPoint*>& points) const
 {
     auto proposed = empty_proposals(frame.features().keypoints.size(), m_max_descriptor_distance);
-    for (const auto& match : source.map_matches()) {
-        match_via_reproject(m_camera, m_max_descriptor_distance, m_norm_type, frame, match.point, proposed, true);
+    for (MapPoint* point : points) {
+        if (point == nullptr) {
+            continue;
+        }
+        match_via_reproject(m_camera, m_max_descriptor_distance, m_norm_type, frame, *point, proposed, true);
     }
     return accepted_matches(proposed);
 }

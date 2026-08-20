@@ -9,7 +9,8 @@ namespace slam::optimization {
 
 std::vector<FrameConfig> build_local_window(const std::vector<std::shared_ptr<KeyFrame>>& key_frames,
                                             Frame& new_frame,
-                                            size_t window_size)
+                                            size_t window_size,
+                                            bool fix_oldest)
 {
     size_t first_optimized = key_frames.size() > window_size ? key_frames.size() - window_size : 2;
     std::unordered_set<const Frame*> window{&new_frame};
@@ -34,6 +35,9 @@ std::vector<FrameConfig> build_local_window(const std::vector<std::shared_ptr<Ke
     for (size_t i = 0; i < key_frames.size(); i++) {
         auto* key_frame = key_frames[i].get();
         bool fixed = i < 2; // for scale anchoring
+        if (fix_oldest && i == first_optimized) {
+            fixed = true;
+        }
         if (window.find(key_frame) != window.end()) {
             frames.push_back({!fixed, key_frame});
             included = included || key_frame == &new_frame;

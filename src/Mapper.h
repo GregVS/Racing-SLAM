@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <unordered_set>
 #include <vector>
 
 #include "Camera.h"
@@ -42,10 +43,12 @@ class Mapper {
     const std::vector<std::shared_ptr<KeyFrame>>& key_frames() const;
 
     void fuse_loop(KeyFrame& query, KeyFrame& candidate, const std::vector<MapPointMatch>& inliers);
-    void bundle_adjust(KeyFrame& key_frame);
+    void bundle_adjust(KeyFrame& key_frame, bool fix_oldest = false);
 
   private:
-    void fuse_match(KeyFrame& frame, const MapPointMatch& match, KeyFrame& candidate);
+    void fuse_match(KeyFrame& frame,
+                    const MapPointMatch& match,
+                    const std::unordered_set<MapPoint*>& old_points);
     /** Numbers of covisible points with the last key frame */
     size_t covisible_points(const Frame& frame) const;
 
