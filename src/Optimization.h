@@ -1,9 +1,10 @@
 #pragma once
 
+#include <memory>
 #include <variant>
+#include <vector>
 
 #include <Eigen/Dense>
-#include <vector>
 
 #include "Imu.h"
 #include "ImuStream.h"
@@ -13,6 +14,7 @@ namespace slam {
 class Map;
 class Frame;
 class Camera;
+class KeyFrame;
 } // namespace slam
 
 namespace slam::optimization {
@@ -76,5 +78,18 @@ bool bundle_adjust(const std::vector<FrameConfig>& frames,
                    const Camera& camera,
                    Map& map,
                    const InertialInput& inertial = {});
+
+struct PoseGraphConstraint {
+    size_t from = 0;
+    size_t to = 0;
+    Eigen::Matrix4d relative = Eigen::Matrix4d::Identity();
+};
+
+/** PGO for poses and loop constraints. Moves keyframes and rigidly transforms their points */
+bool pose_graph(const std::vector<std::shared_ptr<KeyFrame>>& key_frames,
+                const std::vector<PoseGraphConstraint>& loops,
+                Map& map,
+                bool four_dof,
+                const Eigen::Vector3d& gravity);
 
 } // namespace slam::optimization

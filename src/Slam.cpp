@@ -256,7 +256,25 @@ bool Slam::step()
 
     if (new_key_frame) {
         align_to_metric_scale();
+        m_loop_detector.query(*new_key_frame, m_mapper.key_frames());
+        if (m_loop_detector.consume_new_loop()) {
+            time_it("Pose graph opt", [&]() {
+                m_diagnostics.loop_closed = optimization::pose_graph(m_mapper.key_frames(),
+                                                                     m_loop_detector.constraints(),
+                                                                     m_map,
+                                                                     m_inertial.aligned(),
+                                                                     m_inertial.gravity);
+            });
+            if (m_diagnostics.loop_closed) {
+                const auto& query = *m_mapper.key_frames().back();
+                const auto& loops = m_loop_detector.constraints();
+                const auto& constraint = loops.back();
+                m_diagnostics.loop_correction =
+                    (query.camera_center() - m_mapper.key_frames()[constraint.to]->camera_center()).norm();
+            }
+        }
     }
+    m_diagnostics.loop = m_loop_detector.last();
     m_tracker.set_last_frame(frame);
     record_pose(*frame);
     m_diagnostics.map_size = m_map.size();

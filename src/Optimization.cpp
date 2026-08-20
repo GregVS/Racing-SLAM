@@ -1,9 +1,15 @@
 #include "Optimization.h"
 
+#include <algorithm>
+#include <array>
 #include <ceres/ceres.h>
 #include <ceres/rotation.h>
 #include <cmath>
 #include <opencv2/opencv.hpp>
+#include <thread>
+#include <unordered_map>
+
+#include <Eigen/Geometry>
 
 #include "Camera.h"
 #include "Frame.h"
@@ -356,6 +362,271 @@ bool bundle_adjust(const std::vector<FrameConfig>& frames,
         point.set_position(
             Eigen::Vector3f(map_point_params[&point][0], map_point_params[&point][1], map_point_params[&point][2]));
     }
+    return true;
+}
+
+namespace {
+
+constexpr double SEQ_SIGMA_ROT = 0.02;
+constexpr double SEQ_SIGMA_TRANS = 0.2;
+constexpr double LOOP_SIGMA_ROT = 0.05;
+constexpr double LOOP_SIGMA_TRANS = 0.5;
+
+class RelativePoseError {
+  public:
+    RelativePoseError(const Eigen::Matrix3d& R_meas,
+                      const Eigen::Vector3d& t_meas,
+                      double sigma_rot,
+                      double sigma_trans)
+        : m_R_meas(R_meas), m_t_meas(t_meas), m_sigma_rot(sigma_rot), m_sigma_trans(sigma_trans)
+    {
+    }
+
+    template <typename T> bool operator()(const T* const pose_from, const T* const pose_to, T* residuals) const
+    {
+        T R_from_data[9];
+        T R_to_data[9];
+        ceres::AngleAxisToRotationMatrix(pose_from, R_from_data);
+        ceres::AngleAxisToRotationMatrix(pose_to, R_to_data);
+        const Eigen::Map<const Eigen::Matrix<T, 3, 3>> R_from(R_from_data);
+        const Eigen::Map<const Eigen::Matrix<T, 3, 3>> R_to(R_to_data);
+        const Eigen::Matrix<T, 3, 1> c_from(pose_from[3], pose_from[4], pose_from[5]);
+        const Eigen::Matrix<T, 3, 1> c_to(pose_to[3], pose_to[4], pose_to[5]);
+
+        const Eigen::Matrix<T, 3, 3> R_est = R_from * R_to.transpose();
+        const Eigen::Matrix<T, 3, 1> t_est = R_from * (c_to - c_from);
+        const Eigen::Matrix<T, 3, 3> R_err = m_R_meas.transpose().cast<T>() * R_est;
+        T rvec[3];
+        ceres::RotationMatrixToAngleAxis(R_err.data(), rvec);
+        residuals[0] = rvec[0] / T(m_sigma_rot);
+        residuals[1] = rvec[1] / T(m_sigma_rot);
+        residuals[2] = rvec[2] / T(m_sigma_rot);
+        residuals[3] = (t_est[0] - T(m_t_meas[0])) / T(m_sigma_trans);
+        residuals[4] = (t_est[1] - T(m_t_meas[1])) / T(m_sigma_trans);
+        residuals[5] = (t_est[2] - T(m_t_meas[2])) / T(m_sigma_trans);
+        return true;
+    }
+
+    static ceres::CostFunction* Create(const Eigen::Matrix4d& relative, double sigma_rot, double sigma_trans)
+    {
+        return new ceres::AutoDiffCostFunction<RelativePoseError, 6, 6, 6>(
+            new RelativePoseError(relative.block<3, 3>(0, 0), relative.block<3, 1>(0, 3), sigma_rot, sigma_trans));
+    }
+
+  private:
+    const Eigen::Matrix3d m_R_meas;
+    const Eigen::Vector3d m_t_meas;
+    const double m_sigma_rot;
+    const double m_sigma_trans;
+};
+
+// xyz + yaw, since IMU gravity constrains pitch and roll
+class RelativePose4DoFError {
+  public:
+    RelativePose4DoFError(const Eigen::Matrix3d& R_from0,
+                          const Eigen::Matrix3d& R_to0,
+                          const Eigen::Vector3d& up,
+                          const Eigen::Matrix3d& R_meas,
+                          const Eigen::Vector3d& t_meas,
+                          double sigma_rot,
+                          double sigma_trans)
+        : m_R_from0(R_from0), m_R_to0(R_to0), m_up(up), m_R_meas(R_meas), m_t_meas(t_meas), m_sigma_rot(sigma_rot),
+          m_sigma_trans(sigma_trans)
+    {
+    }
+
+    template <typename T> Eigen::Matrix<T, 3, 3> rotation_cw(const T yaw, const Eigen::Matrix3d& R0) const
+    {
+        T aa[3] = {T(-m_up[0]) * yaw, T(-m_up[1]) * yaw, T(-m_up[2]) * yaw};
+        T R_delta[9];
+        ceres::AngleAxisToRotationMatrix(aa, R_delta);
+        return R0.cast<T>() * Eigen::Map<const Eigen::Matrix<T, 3, 3>>(R_delta);
+    }
+
+    template <typename T> bool operator()(const T* const pose_from, const T* const pose_to, T* residuals) const
+    {
+        const Eigen::Matrix<T, 3, 3> R_from = rotation_cw(pose_from[0], m_R_from0);
+        const Eigen::Matrix<T, 3, 3> R_to = rotation_cw(pose_to[0], m_R_to0);
+        const Eigen::Matrix<T, 3, 1> c_from(pose_from[1], pose_from[2], pose_from[3]);
+        const Eigen::Matrix<T, 3, 1> c_to(pose_to[1], pose_to[2], pose_to[3]);
+
+        const Eigen::Matrix<T, 3, 3> R_est = R_from * R_to.transpose();
+        const Eigen::Matrix<T, 3, 1> t_est = R_from * (c_to - c_from);
+        const Eigen::Matrix<T, 3, 3> R_err = m_R_meas.transpose().cast<T>() * R_est;
+        T rvec[3];
+        ceres::RotationMatrixToAngleAxis(R_err.data(), rvec);
+        residuals[0] = rvec[0] / T(m_sigma_rot);
+        residuals[1] = rvec[1] / T(m_sigma_rot);
+        residuals[2] = rvec[2] / T(m_sigma_rot);
+        residuals[3] = (t_est[0] - T(m_t_meas[0])) / T(m_sigma_trans);
+        residuals[4] = (t_est[1] - T(m_t_meas[1])) / T(m_sigma_trans);
+        residuals[5] = (t_est[2] - T(m_t_meas[2])) / T(m_sigma_trans);
+        return true;
+    }
+
+    static ceres::CostFunction* Create(const Eigen::Matrix3d& R_from0,
+                                       const Eigen::Matrix3d& R_to0,
+                                       const Eigen::Vector3d& up,
+                                       const Eigen::Matrix4d& relative,
+                                       double sigma_rot,
+                                       double sigma_trans)
+    {
+        return new ceres::AutoDiffCostFunction<RelativePose4DoFError, 6, 4, 4>(new RelativePose4DoFError(
+            R_from0, R_to0, up, relative.block<3, 3>(0, 0), relative.block<3, 1>(0, 3), sigma_rot, sigma_trans));
+    }
+
+  private:
+    const Eigen::Matrix3d m_R_from0;
+    const Eigen::Matrix3d m_R_to0;
+    const Eigen::Vector3d m_up;
+    const Eigen::Matrix3d m_R_meas;
+    const Eigen::Vector3d m_t_meas;
+    const double m_sigma_rot;
+    const double m_sigma_trans;
+};
+
+Eigen::Matrix4d pose_relative(const Frame& from, const Frame& to)
+{
+    return from.pose().cast<double>() * to.pose().inverse().cast<double>();
+}
+
+void apply_corrected_pose(Frame& frame, const Eigen::Matrix3d& R_cw, const Eigen::Vector3d& center)
+{
+    Eigen::Matrix4f pose = Eigen::Matrix4f::Identity();
+    pose.block<3, 3>(0, 0) = R_cw.cast<float>();
+    pose.block<3, 1>(0, 3) = -R_cw.cast<float>() * center.cast<float>();
+    const Eigen::Matrix3f R_delta = pose.block<3, 3>(0, 0).transpose() * frame.pose().block<3, 3>(0, 0);
+    frame.set_pose(pose);
+    InertialState inertial = frame.inertial();
+    inertial.velocity = R_delta.cast<double>() * inertial.velocity;
+    frame.set_inertial(inertial);
+}
+
+void transform_points(Map& map, const std::unordered_map<const Frame*, Eigen::Matrix4f>& old_poses)
+{
+    for (auto& point : map) {
+        if (point.observations().empty()) {
+            continue;
+        }
+        KeyFrame* owner = nullptr;
+        for (const auto& [observer, _] : point.observations()) {
+            if (owner == nullptr || observer->index() < owner->index()) {
+                owner = observer;
+            }
+        }
+        const auto old = old_poses.find(owner);
+        if (old == old_poses.end()) {
+            continue;
+        }
+        const Eigen::Matrix4f& T_old = old->second;
+        const Eigen::Matrix4f& T_new = owner->pose();
+        const Eigen::Vector3f p = point.position();
+        const Eigen::Vector3f p_cam = T_old.block<3, 3>(0, 0) * p + T_old.block<3, 1>(0, 3);
+        const Eigen::Vector3f p_new = T_new.block<3, 3>(0, 0).transpose() * (p_cam - T_new.block<3, 1>(0, 3));
+        point.set_position(p_new);
+    }
+}
+
+} // namespace
+
+bool pose_graph(const std::vector<std::shared_ptr<KeyFrame>>& key_frames,
+                const std::vector<PoseGraphConstraint>& loops,
+                Map& map,
+                bool four_dof,
+                const Eigen::Vector3d& gravity)
+{
+    if (key_frames.size() < 3 || loops.empty()) {
+        return false;
+    }
+
+    Eigen::Vector3d up = Eigen::Vector3d::UnitZ();
+    if (four_dof) {
+        if (gravity.squaredNorm() < 1e-6) {
+            four_dof = false;
+        } else {
+            up = -gravity.normalized();
+        }
+    }
+
+    auto problem = ceres::Problem();
+    std::vector<std::array<double, 6>> se3(key_frames.size());
+    std::vector<std::array<double, 4>> dof4(key_frames.size());
+    std::vector<Eigen::Matrix3d> R0(key_frames.size());
+    std::unordered_map<const Frame*, Eigen::Matrix4f> old_poses;
+    old_poses.reserve(key_frames.size());
+
+    for (size_t i = 0; i < key_frames.size(); i++) {
+        old_poses[key_frames[i].get()] = key_frames[i]->pose();
+        se3[i] = pack_pose(*key_frames[i]);
+        R0[i] = key_frames[i]->pose().block<3, 3>(0, 0).cast<double>();
+        const Eigen::Vector3f center = key_frames[i]->camera_center();
+        dof4[i] = {0.0, center.x(), center.y(), center.z()};
+    }
+
+    auto add_edge = [&](size_t from, size_t to, const Eigen::Matrix4d& relative, bool loop) {
+        const double sigma_rot = loop ? LOOP_SIGMA_ROT : SEQ_SIGMA_ROT;
+        const double sigma_trans = loop ? LOOP_SIGMA_TRANS : SEQ_SIGMA_TRANS;
+        ceres::LossFunction* loss = loop ? new ceres::HuberLoss(1.0) : nullptr;
+        if (four_dof) {
+            problem.AddResidualBlock(
+                RelativePose4DoFError::Create(R0[from], R0[to], up, relative, sigma_rot, sigma_trans),
+                loss,
+                dof4[from].data(),
+                dof4[to].data());
+        } else {
+            problem.AddResidualBlock(
+                RelativePoseError::Create(relative, sigma_rot, sigma_trans), loss, se3[from].data(), se3[to].data());
+        }
+    };
+
+    for (size_t i = 0; i + 1 < key_frames.size(); i++) {
+        add_edge(i, i + 1, pose_relative(*key_frames[i], *key_frames[i + 1]), false);
+    }
+    for (const auto& loop : loops) {
+        if (loop.from >= key_frames.size() || loop.to >= key_frames.size() || loop.from == loop.to) {
+            continue;
+        }
+        add_edge(loop.from, loop.to, loop.relative, true);
+    }
+
+    if (four_dof) {
+        problem.SetParameterBlockConstant(dof4[0].data());
+    } else {
+        problem.SetParameterBlockConstant(se3[0].data());
+    }
+
+    ceres::Solver::Options options;
+    options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
+    options.max_num_iterations = 50;
+    options.num_threads = 1;
+    ceres::Solver::Summary summary;
+    ceres::Solve(options, &problem, &summary);
+    std::cout << "Pose graph " << (four_dof ? "4-DOF" : "SE3") << " " << summary.BriefReport() << '\n';
+    const bool usable =
+        summary.IsSolutionUsable() && std::isfinite(summary.final_cost) && summary.final_cost <= summary.initial_cost;
+    if (!usable) {
+        std::cout << "Pose graph rejected, unusable or non-improving solution\n";
+        return false;
+    }
+
+    float max_correction = 0.0F;
+    for (size_t i = 0; i < key_frames.size(); i++) {
+        Eigen::Matrix3d R_cw;
+        Eigen::Vector3d center;
+        if (four_dof) {
+            const double yaw = dof4[i][0];
+            R_cw = R0[i] * Eigen::AngleAxisd(-yaw, up).toRotationMatrix();
+            center = Eigen::Vector3d(dof4[i][1], dof4[i][2], dof4[i][3]);
+        } else {
+            R_cw = rodrigues_to_matrix(Eigen::Vector3f(se3[i][0], se3[i][1], se3[i][2])).cast<double>();
+            center = Eigen::Vector3d(se3[i][3], se3[i][4], se3[i][5]);
+        }
+        const Eigen::Vector3f before = key_frames[i]->camera_center();
+        apply_corrected_pose(*key_frames[i], R_cw, center);
+        max_correction = std::max(max_correction, (key_frames[i]->camera_center() - before).norm());
+    }
+    transform_points(map, old_poses);
+    std::cout << "Pose graph applied, max snap " << max_correction << " loops " << loops.size() << '\n';
     return true;
 }
 
