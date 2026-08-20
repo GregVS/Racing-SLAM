@@ -13,6 +13,7 @@ find_package(Eigen3 REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
 add_subdirectory(lightglue)
+add_subdirectory(thirdparty/DBoW2)
 
 file(GLOB SRC_FILES src/*.cpp src/app/*.cpp src/features/*.cpp)
 list(REMOVE_ITEM SRC_FILES */main.cpp)
@@ -22,13 +23,16 @@ target_link_options(slam PRIVATE
     "LINKER:--undefined=avpriv_adts_header_parse"
     "LINKER:--undefined=av_adts_header_parse")
 add_library(slam_lib ${SRC_FILES})
-target_link_libraries(slam_lib Eigen3::Eigen Ceres::ceres ${OpenCV_LIBS} ${Pangolin_LIBRARIES} lightglue yaml-cpp::yaml-cpp)
-target_link_libraries(slam Eigen3::Eigen Ceres::ceres ${OpenCV_LIBS} ${Pangolin_LIBRARIES} lightglue yaml-cpp::yaml-cpp)
+target_link_libraries(slam_lib Eigen3::Eigen Ceres::ceres ${OpenCV_LIBS} ${Pangolin_LIBRARIES} lightglue yaml-cpp::yaml-cpp DBoW2)
+target_link_libraries(slam Eigen3::Eigen Ceres::ceres ${OpenCV_LIBS} ${Pangolin_LIBRARIES} lightglue yaml-cpp::yaml-cpp DBoW2)
 
 file(GLOB TEST_FILES test/*.cpp)
 foreach(TEST_FILE ${TEST_FILES})
     get_filename_component(TEST_NAME ${TEST_FILE} NAME_WE)  # Get name without extension
     add_executable(${TEST_NAME} ${TEST_FILE})
     target_include_directories(${TEST_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/src)
-    target_link_libraries(${TEST_NAME} PRIVATE slam_lib Eigen3::Eigen Ceres::ceres ${OpenCV_LIBS} ${Pangolin_LIBRARIES} yaml-cpp::yaml-cpp)
+    target_link_options(${TEST_NAME} PRIVATE
+        "LINKER:--undefined=avpriv_adts_header_parse"
+        "LINKER:--undefined=av_adts_header_parse")
+    target_link_libraries(${TEST_NAME} PRIVATE slam_lib Eigen3::Eigen Ceres::ceres ${OpenCV_LIBS} ${Pangolin_LIBRARIES} yaml-cpp::yaml-cpp DBoW2)
 endforeach()
