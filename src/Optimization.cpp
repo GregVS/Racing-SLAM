@@ -8,6 +8,7 @@
 #include <opencv2/opencv.hpp>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <Eigen/Geometry>
 
@@ -15,6 +16,7 @@
 #include "Frame.h"
 #include "ImuFactor.h"
 #include "Map.h"
+#include "MapPoint.h"
 
 class ReprojectionError {
   public:
@@ -264,10 +266,7 @@ bool refine_pose(Frame& frame, const Camera& camera, const InertialConstraint& i
     return true;
 }
 
-bool bundle_adjust(const std::vector<FrameConfig>& frames,
-                   const Camera& camera,
-                   Map& map,
-                   const InertialInput& inertial)
+bool bundle_adjust(const std::vector<FrameConfig>& frames, const Camera& camera, Map&, const InertialInput& inertial)
 {
     auto problem = ceres::Problem();
     std::unordered_map<const Frame*, std::array<double, 6>> frame_params;
@@ -284,7 +283,7 @@ bool bundle_adjust(const std::vector<FrameConfig>& frames,
 
     // Points observed by the frames being optimized become free parameters
     std::unordered_set<const Frame*> frames_to_optimize;
-    std::unordered_set<const MapPoint*> points_to_optimize;
+    std::unordered_set<MapPoint*> points_to_optimize;
     for (const auto& frame_config : frames) {
         if (!frame_config.optimize) {
             continue;
@@ -292,7 +291,7 @@ bool bundle_adjust(const std::vector<FrameConfig>& frames,
         frames_to_optimize.insert(frame_config.frame);
 
         for (auto match : frame_config.frame->map_matches()) {
-            const auto& point = match.point;
+            auto& point = match.point;
             if (point.observations().size() < MIN_OBSERVATIONS_TO_OPTIMIZE) {
                 continue;
             }
@@ -367,12 +366,9 @@ bool bundle_adjust(const std::vector<FrameConfig>& frames,
             unpack_inertial(velocity_params[frame_config.frame], bias_params[frame_config.frame], *frame_config.frame);
         }
     }
-    for (auto& point : map) {
-        if (points_to_optimize.find(&point) == points_to_optimize.end()) {
-            continue;
-        }
-        point.set_position(
-            Eigen::Vector3f(map_point_params[&point][0], map_point_params[&point][1], map_point_params[&point][2]));
+    for (MapPoint* point : points_to_optimize) {
+        const auto& params = map_point_params[point];
+        point->set_position(Eigen::Vector3f(params[0], params[1], params[2]));
     }
     return true;
 }
