@@ -1,6 +1,10 @@
 #include "Visualization.h"
 
 #include <chrono>
+#include <cmath>
+#include <cstdlib>
+#include <iostream>
+#include <pangolin/display/process.h>
 #include <pangolin/pangolin.h>
 #include <thread>
 
@@ -26,7 +30,8 @@ void Visualization::initialize(int width, int height)
 
     m_handler = new pangolin::Handler3D(*m_camera_state, pangolin::AxisNegY);
     m_3d_display = &pangolin::CreateDisplay().SetBounds(0.4, 1.0, 0.0, 1.0).SetHandler(m_handler);
-    m_image_display = &pangolin::CreateDisplay().SetBounds(0.0, 0.4, 0.0, 1.0);
+    m_image_display = &pangolin::CreateDisplay().SetBounds(0.0, 0.4, 0.0, 0.65);
+    m_top_down_display = &pangolin::CreateDisplay().SetBounds(0.0, 0.4, 0.65, 1.0);
 
     pangolin::GetBoundWindow()->RemoveCurrent();
     m_initialized = true;
@@ -54,6 +59,23 @@ namespace {
 float visual_scale(double meters_per_unit)
 {
     return meters_per_unit > 0.0 ? static_cast<float>(1.0 / meters_per_unit) : 1.0F;
+}
+
+float grid_step(float extent)
+{
+    const float target = std::max(extent, 1e-3F) / 10.0F;
+    const float magnitude = std::pow(10.0F, std::floor(std::log10(target)));
+    const float normalized = target / magnitude;
+    if (normalized < 1.5F) {
+        return magnitude;
+    }
+    if (normalized < 3.5F) {
+        return 2.0F * magnitude;
+    }
+    if (normalized < 7.5F) {
+        return 5.0F * magnitude;
+    }
+    return 10.0F * magnitude;
 }
 
 } // namespace
@@ -209,13 +231,122 @@ void Visualization::draw_image(const Snapshot& snapshot)
     m_image_texture->RenderToViewport(true);
 }
 
+// Top down XZ view of the trajectory, X right and Z up on screen
+void Visualization::draw_top_down(const Snapshot& snapshot)
+{
+    m_top_down_display->Activate();
+    if (snapshot.poses.empty()) {
+        return;
+    }
+
+    const float scale = visual_scale(snapshot.meters_per_unit);
+
+    std::vector<Eigen::Vector2f> track;
+    track.reserve(snapshot.poses.size());
+    Eigen::Vector2f heading(0.0F, 1.0F);
+    for (const Eigen::Matrix4f& pose : snapshot.poses) {
+        const Eigen::Matrix3f rotation = pose.block<3, 3>(0, 0);
+        const Eigen::Vector3f centre = -rotation.transpose() * pose.block<3, 1>(0, 3) * scale;
+        track.emplace_back(centre[0], centre[2]);
+        heading = Eigen::Vector2f(rotation(2, 0), rotation(2, 2));
+    }
+
+    Eigen::Vector2f minimum = track.front();
+    Eigen::Vector2f maximum = track.front();
+    for (const Eigen::Vector2f& position : track) {
+        minimum = minimum.cwiseMin(position);
+        maximum = maximum.cwiseMax(position);
+    }
+
+    const Eigen::Vector2f centre = 0.5F * (minimum + maximum);
+    float half_extent = 0.5F * (maximum - minimum).maxCoeff();
+    half_extent = std::max(half_extent, 1.0F) * 1.15F;
+
+    const float aspect = m_top_down_display->v.h > 0
+                             ? static_cast<float>(m_top_down_display->v.w) / static_cast<float>(m_top_down_display->v.h)
+                             : 1.0F;
+    const float half_width = aspect >= 1.0F ? half_extent * aspect : half_extent;
+    const float half_height = aspect >= 1.0F ? half_extent : half_extent / aspect;
+
+    glDisable(GL_DEPTH_TEST);
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glOrtho(
+        centre[0] - half_width, centre[0] + half_width, centre[1] - half_height, centre[1] + half_height, -1.0, 1.0);
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+
+    // Grid
+    const float step = grid_step(2.0F * half_extent);
+    const float left = std::floor((centre[0] - half_width) / step) * step;
+    const float right = centre[0] + half_width;
+    const float bottom = std::floor((centre[1] - half_height) / step) * step;
+    const float top = centre[1] + half_height;
+    glLineWidth(1);
+    glColor3f(0.22f, 0.22f, 0.22f);
+    glBegin(GL_LINES);
+    for (float x = left; x <= right; x += step) {
+        glVertex2f(x, centre[1] - half_height);
+        glVertex2f(x, centre[1] + half_height);
+    }
+    for (float y = bottom; y <= top; y += step) {
+        glVertex2f(centre[0] - half_width, y);
+        glVertex2f(centre[0] + half_width, y);
+    }
+    glEnd();
+
+    // Map points
+    glPointSize(2);
+    glBegin(GL_POINTS);
+    for (const auto& point : snapshot.points) {
+        glColor3ub(point.color[0] / 2, point.color[1] / 2, point.color[2] / 2);
+        const Eigen::Vector3f position = point.position * scale;
+        glVertex2f(position[0], position[2]);
+    }
+    glEnd();
+
+    // Trajectory
+    glLineWidth(2);
+    glColor3f(0.3f, 0.6f, 1.0f);
+    glBegin(GL_LINE_STRIP);
+    for (const Eigen::Vector2f& position : track) {
+        glVertex2f(position[0], position[1]);
+    }
+    glEnd();
+
+    // Current pose with heading
+    const Eigen::Vector2f current = track.back();
+    const float marker = 0.02F * half_extent * 2.0F;
+    if (heading.norm() > 1e-6F) {
+        heading.normalize();
+        glLineWidth(2);
+        glColor3f(0.0f, 1.0f, 0.0f);
+        glBegin(GL_LINES);
+        glVertex2f(current[0], current[1]);
+        glVertex2f(current[0] + heading[0] * marker * 4.0F, current[1] + heading[1] * marker * 4.0F);
+        glEnd();
+    }
+    glPointSize(8);
+    glColor3f(0.0f, 1.0f, 0.0f);
+    glBegin(GL_POINTS);
+    glVertex2f(current[0], current[1]);
+    glEnd();
+
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    glEnable(GL_DEPTH_TEST);
+}
+
 void Visualization::run()
 {
     if (!m_initialized) {
         throw std::runtime_error("Visualization not initialized");
     }
     pangolin::BindToContext(m_window_name);
-
     pangolin::RegisterKeyPressCallback(pangolin::PANGO_KEY_TAB, [&]() {
         std::lock_guard<std::mutex> lock(m_key_pressed_mutex);
         m_key_pressed_cv.notify_all();
@@ -256,6 +387,7 @@ void Visualization::run()
                 draw_camera_poses(snapshot);
                 draw_points(snapshot);
                 draw_image(snapshot);
+                draw_top_down(snapshot);
             }
         }
 

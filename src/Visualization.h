@@ -50,6 +50,7 @@ class Visualization {
     void draw_camera_poses(const Snapshot& snapshot);
     void draw_points(const Snapshot& snapshot);
     void draw_image(const Snapshot& snapshot);
+    void draw_top_down(const Snapshot& snapshot);
     void step_view(int delta);
     void toggle_pause();
 
@@ -59,6 +60,7 @@ class Visualization {
     pangolin::Handler3D* m_handler = nullptr;
     pangolin::View* m_3d_display = nullptr;
     pangolin::View* m_image_display = nullptr;
+    pangolin::View* m_top_down_display = nullptr;
     bool m_initialized = false;
 
     std::atomic<bool> m_has_quit = false;
