@@ -22,6 +22,9 @@ class MapMatcher {
     /** Match to a key frame's points via reprojection */
     std::vector<MapPointMatch> match_key_frame(const Frame& frame, Map& map, KeyFrame* key_frame) const;
 
+    /** Project source points into frame, including keypoints that already have a map point */
+    std::vector<MapPointMatch> match_for_fuse(const Frame& frame, KeyFrame& source) const;
+
     /** Descriptor match to a key frame's points via knn */
     std::vector<MapPointMatch> match_descriptors(const Frame& frame, const KeyFrame& key_frame) const;
 

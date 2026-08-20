@@ -16,6 +16,86 @@ constexpr float MAX_NEARER_RATIO = 2.0F;
 constexpr float MAX_FURTHER_RATIO = 1.25F;
 constexpr float MATCH_RATIO = 0.75F;
 
+struct ProposedMatch {
+    MapPoint* point;
+    float dist;
+};
+
+std::vector<ProposedMatch> empty_proposals(size_t count, float max_descriptor_distance)
+{
+    std::vector<ProposedMatch> proposed(count);
+    for (auto& proposal : proposed) {
+        proposal = {.point = nullptr, .dist = max_descriptor_distance};
+    }
+    return proposed;
+}
+
+std::vector<MapPointMatch> accepted_matches(const std::vector<ProposedMatch>& proposed)
+{
+    std::vector<MapPointMatch> matches;
+    for (size_t i = 0; i < proposed.size(); i++) {
+        if (proposed[i].point != nullptr) {
+            matches.push_back(MapPointMatch{*proposed[i].point, i});
+        }
+    }
+    return matches;
+}
+
+void match_via_reproject(const Camera& camera,
+                         float max_descriptor_distance,
+                         cv::NormTypes norm_type,
+                         const Frame& frame,
+                         MapPoint& point,
+                         std::vector<ProposedMatch>& proposed,
+                         bool replace)
+{
+    if (frame.is_matched(point)) {
+        return;
+    }
+
+    auto image_point = camera.project(frame.pose(), point.position());
+    if (!camera.is_in_image(image_point)) {
+        return;
+    }
+
+    auto ray = point.position() - frame.camera_center();
+    auto viewing_normal = point.avg_viewing_normal();
+    if (viewing_normal.dot(ray.normalized()) < MIN_VIEWING_ANGLE_COSINE) {
+        return;
+    }
+
+    // Only match points that were observed from a similar distance
+    auto [nearest, furthest] = point.observed_distance_range();
+    float distance = ray.norm();
+    if (distance < nearest / MAX_NEARER_RATIO || distance > furthest * MAX_FURTHER_RATIO) {
+        return;
+    }
+
+    auto feature_indices = frame.features_in_region(image_point, SEARCH_RADIUS);
+
+    size_t best_match_index = 0;
+    float best_match_distance = max_descriptor_distance;
+
+    for (const auto& index : feature_indices) {
+        if (!replace && frame.is_matched(index)) {
+            continue;
+        }
+
+        const auto descriptor = frame.descriptor(index);
+        for (const auto& [obs_keyframe, obs_index] : point.observations()) {
+            auto orb_dist = cv::norm(descriptor, obs_keyframe->descriptor(obs_index), norm_type);
+            if (orb_dist < best_match_distance) {
+                best_match_distance = orb_dist;
+                best_match_index = index;
+            }
+        }
+    }
+
+    if (best_match_distance < proposed[best_match_index].dist) {
+        proposed[best_match_index] = {.point = &point, .dist = best_match_distance};
+    }
+}
+
 } // namespace
 
 MapMatcher::MapMatcher(const Camera& camera, float max_descriptor_distance, cv::NormTypes norm_type)
@@ -31,6 +111,15 @@ std::vector<MapPointMatch> MapMatcher::match_map(const Frame& frame, Map& map) c
 std::vector<MapPointMatch> MapMatcher::match_key_frame(const Frame& frame, Map& map, KeyFrame* key_frame) const
 {
     return match(frame, map, key_frame);
+}
+
+std::vector<MapPointMatch> MapMatcher::match_for_fuse(const Frame& frame, KeyFrame& source) const
+{
+    auto proposed = empty_proposals(frame.features().keypoints.size(), m_max_descriptor_distance);
+    for (const auto& match : source.map_matches()) {
+        match_via_reproject(m_camera, m_max_descriptor_distance, m_norm_type, frame, match.point, proposed, true);
+    }
+    return accepted_matches(proposed);
 }
 
 std::vector<MapPointMatch> MapMatcher::match_descriptors(const Frame& frame, const KeyFrame& key_frame) const
@@ -71,75 +160,14 @@ std::vector<MapPointMatch> MapMatcher::match_descriptors(const Frame& frame, con
 
 std::vector<MapPointMatch> MapMatcher::match(const Frame& frame, Map& map, KeyFrame* required_observer) const
 {
-    struct ProposedMatch {
-        MapPoint* point;
-        float dist;
-        size_t keypoint_index;
-    };
-
-    std::vector<ProposedMatch> proposed_matches(frame.features().keypoints.size());
-    for (size_t i = 0; i < frame.features().keypoints.size(); ++i) {
-        proposed_matches[i] = {.point = nullptr, .dist = m_max_descriptor_distance, .keypoint_index = 0};
-    }
-
+    auto proposed = empty_proposals(frame.features().keypoints.size(), m_max_descriptor_distance);
     for (auto& point : map) {
-        if ((required_observer != nullptr && !point.is_observed_by(required_observer)) || frame.is_matched(point)) {
+        if (required_observer != nullptr && !point.is_observed_by(required_observer)) {
             continue;
         }
-
-        auto image_point = m_camera.project(frame.pose(), point.position());
-        if (!m_camera.is_in_image(image_point)) {
-            continue;
-        }
-
-        auto ray = point.position() - frame.camera_center();
-        auto viewing_normal = point.avg_viewing_normal();
-        if (viewing_normal.dot(ray.normalized()) < MIN_VIEWING_ANGLE_COSINE) {
-            continue;
-        }
-
-        // Only match points that were observed from a similar distance
-        auto [nearest, furthest] = point.observed_distance_range();
-        float distance = ray.norm();
-        if (distance < nearest / MAX_NEARER_RATIO || distance > furthest * MAX_FURTHER_RATIO) {
-            continue;
-        }
-
-        auto feature_indices = frame.features_in_region(image_point, SEARCH_RADIUS);
-
-        size_t best_match_index = 0;
-        float best_match_distance = m_max_descriptor_distance;
-
-        for (const auto& index : feature_indices) {
-            // Claimed by an earlier pass
-            if (frame.is_matched(index)) {
-                continue;
-            }
-
-            const auto descriptor = frame.descriptor(index);
-
-            for (const auto& [obs_keyframe, obs_index] : point.observations()) {
-                auto orb_dist = cv::norm(descriptor, obs_keyframe->descriptor(obs_index), m_norm_type);
-                if (orb_dist < best_match_distance) {
-                    best_match_distance = orb_dist;
-                    best_match_index = index;
-                }
-            }
-        }
-
-        if (best_match_distance < proposed_matches[best_match_index].dist) {
-            proposed_matches[best_match_index] = {
-                .point = &point, .dist = best_match_distance, .keypoint_index = best_match_index};
-        }
+        match_via_reproject(m_camera, m_max_descriptor_distance, m_norm_type, frame, point, proposed, false);
     }
-
-    std::vector<MapPointMatch> final_matches;
-    for (const auto& proposed_match : proposed_matches) {
-        if (proposed_match.point != nullptr) {
-            final_matches.push_back(MapPointMatch{*proposed_match.point, proposed_match.keypoint_index});
-        }
-    }
-    return final_matches;
+    return accepted_matches(proposed);
 }
 
 } // namespace slam

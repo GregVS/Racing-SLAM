@@ -35,7 +35,8 @@ Slam::Slam(const VideoLoader& video_loader,
     : m_video_loader(video_loader), m_camera(camera), m_static_mask(image_mask),
       m_feature_extractor(std::move(feature_extractor)), m_config(config),
       m_tracker(m_camera, m_static_mask, *m_feature_extractor, m_config, m_map),
-      m_mapper(m_camera, m_config, m_map, m_inertial), m_loop_detector(m_config, m_camera, *m_feature_extractor)
+      m_mapper(m_camera, m_config, m_map, m_inertial, *m_feature_extractor),
+      m_loop_detector(m_config, m_camera, *m_feature_extractor)
 {
     m_inertial.seconds_per_frame = m_config.seconds_per_frame;
     if (m_config.imu_path.empty()) {
@@ -272,7 +273,11 @@ bool Slam::step()
                 const auto& constraint = loops.back();
                 m_diagnostics.loop_correction =
                     (query.camera_center() - m_mapper.key_frames()[constraint.to]->camera_center()).norm();
-                time_it("Fuse loop", [&]() { m_mapper.fuse_loop(query, constraint.inliers); });
+                if (constraint.to < m_mapper.key_frames().size()) {
+                    time_it("Fuse loop", [&]() {
+                        m_mapper.fuse_loop(query, *m_mapper.key_frames()[constraint.to], constraint.inliers);
+                    });
+                }
                 if (m_config.bundle_adjust) {
                     m_mapper.bundle_adjust(query);
                 }

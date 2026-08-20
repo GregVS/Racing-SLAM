@@ -11,6 +11,7 @@
 #include "Optimization.h"
 #include "Slam.h"
 #include "Triangulation.h"
+#include "features/FeatureExtractor.h"
 
 namespace slam {
 
@@ -36,8 +37,13 @@ constexpr float MAX_POINT_REPROJECTION_ERROR = 3.0F;
 
 } // namespace
 
-Mapper::Mapper(const Camera& camera, const SlamConfig& config, Map& map, const optimization::InertialInput& inertial)
-    : m_camera(camera), m_config(config), m_map(map), m_inertial(inertial)
+Mapper::Mapper(const Camera& camera,
+               const SlamConfig& config,
+               Map& map,
+               const optimization::InertialInput& inertial,
+               const features::BaseFeatureExtractor& extractor)
+    : m_camera(camera), m_config(config), m_map(map), m_inertial(inertial),
+      m_map_matcher(camera, extractor.max_distance(), extractor.norm_type())
 {
 }
 
@@ -126,25 +132,45 @@ Mapper::insert(Frame&& frame, TrackStore& tracks, const Trajectory& trajectory, 
     return key_frame;
 }
 
-void Mapper::fuse_loop(KeyFrame& query, const std::vector<MapPointMatch>& inliers)
+void Mapper::fuse_match(KeyFrame& frame, const MapPointMatch& match, KeyFrame& candidate)
+{
+    if (match.keypoint_index >= frame.features().keypoints.size()) {
+        return;
+    }
+    MapPoint& kept = match.point;
+    if (!frame.is_matched(match.keypoint_index)) {
+        if (frame.is_matched(kept)) {
+            return;
+        }
+        m_map.associate(frame, kept, match.keypoint_index);
+        return;
+    }
+    MapPoint& discarded = frame.map_match(match.keypoint_index);
+    if (&discarded == &kept) {
+        return;
+    }
+    if (discarded.is_observed_by(&candidate)) {
+        return;
+    }
+    m_map.fuse(kept, discarded);
+}
+
+void Mapper::fuse_loop(KeyFrame& query, KeyFrame& candidate, const std::vector<MapPointMatch>& inliers)
 {
     for (const auto& inlier : inliers) {
-        if (inlier.keypoint_index >= query.features().keypoints.size()) {
+        fuse_match(query, inlier, candidate);
+    }
+
+    size_t first = m_key_frames.size() > BA_WINDOW ? m_key_frames.size() - BA_WINDOW : 0;
+    for (size_t i = first; i < m_key_frames.size(); i++) {
+        KeyFrame& frame = *m_key_frames[i];
+        if (&frame == &candidate) {
             continue;
         }
-        MapPoint& kept = inlier.point;
-        if (!query.is_matched(inlier.keypoint_index)) {
-            if (query.is_matched(kept)) {
-                continue;
-            }
-            m_map.associate(query, kept, inlier.keypoint_index);
-            continue;
+        auto matches = m_map_matcher.match_for_fuse(frame, candidate);
+        for (const auto& match : matches) {
+            fuse_match(frame, match, candidate);
         }
-        MapPoint& discarded = query.map_match(inlier.keypoint_index);
-        if (&discarded == &kept) {
-            continue;
-        }
-        m_map.fuse(kept, discarded);
     }
 }
 

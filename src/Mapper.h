@@ -5,6 +5,7 @@
 
 #include "Camera.h"
 #include "Map.h"
+#include "MapMatcher.h"
 #include "Optimization.h"
 #include "TrackStore.h"
 #include "Trajectory.h"
@@ -16,11 +17,19 @@ class KeyFrame;
 struct SlamConfig;
 struct FrameDiagnostics;
 
+namespace features {
+class BaseFeatureExtractor;
+}
+
 /** Owns the key frames and everything that grows the map: promotion, triangulation, local bundle
  * adjustment and point culling */
 class Mapper {
   public:
-    Mapper(const Camera& camera, const SlamConfig& config, Map& map, const optimization::InertialInput& inertial);
+    Mapper(const Camera& camera,
+           const SlamConfig& config,
+           Map& map,
+           const optimization::InertialInput& inertial,
+           const features::BaseFeatureExtractor& extractor);
 
     bool needs_key_frame(const Frame& frame, const TrackStore& tracks) const;
 
@@ -32,10 +41,11 @@ class Mapper {
 
     const std::vector<std::shared_ptr<KeyFrame>>& key_frames() const;
 
-    void fuse_loop(KeyFrame& query, const std::vector<MapPointMatch>& inliers);
+    void fuse_loop(KeyFrame& query, KeyFrame& candidate, const std::vector<MapPointMatch>& inliers);
     void bundle_adjust(KeyFrame& key_frame);
 
   private:
+    void fuse_match(KeyFrame& frame, const MapPointMatch& match, KeyFrame& candidate);
     /** Numbers of covisible points with the last key frame */
     size_t covisible_points(const Frame& frame) const;
 
@@ -55,6 +65,7 @@ class Mapper {
     const SlamConfig& m_config;
     Map& m_map;
     const optimization::InertialInput& m_inertial;
+    MapMatcher m_map_matcher;
     std::vector<std::shared_ptr<KeyFrame>> m_key_frames;
 };
 
