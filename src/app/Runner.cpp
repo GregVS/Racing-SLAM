@@ -133,12 +133,18 @@ void run_viewer(Slam& slam, const Camera& camera)
         }
         cv::drawKeypoints(render, keypoints, render, cv::Scalar(0, 255, 0), cv::DrawMatchesFlags::DEFAULT);
         const auto& diagnostics = slam.diagnostics();
+        const auto& loop = diagnostics.loop;
         std::ostringstream status;
         status << "map " << diagnostics.map_size << "  matches " << frame.num_map_matches() << "  culled "
                << diagnostics.culled.size() << "  poisoned " << diagnostics.poisoned << "  new "
                << diagnostics.triangulated;
+        std::vector<Visualization::LoopLine> loops;
+        loops.reserve(loop.edges.size());
+        for (const auto& edge : loop.edges) {
+            loops.push_back({edge.from, edge.to, edge.verified});
+        }
         visualization.push_frame(
-            frame.index(), render, poses, points, diagnostics.culled, status.str(), slam.metric_scale());
+            frame.index(), render, poses, points, diagnostics.culled, status.str(), slam.metric_scale(), loops);
 
         std::cout << "Reprojection error: " << slam.reprojection_error() << '\n';
 

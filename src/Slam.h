@@ -4,10 +4,12 @@
 #include <string>
 
 #include <Eigen/Dense>
+#include <opencv2/core.hpp>
 
 #include "Camera.h"
 #include "ImuStream.h"
 #include "InertialAlignment.h"
+#include "LoopDetector.h"
 #include "Map.h"
 #include "Mapper.h"
 #include "Optimization.h"
@@ -41,6 +43,9 @@ struct FrameDiagnostics {
     size_t track_consistent = 0;
     size_t poisoned = 0;
     std::vector<Eigen::Vector3f> culled;
+    LoopQueryResult loop;
+    bool loop_closed = false;
+    float loop_correction = 0.0F;
 };
 
 class Slam {
@@ -87,6 +92,7 @@ class Slam {
     double m_scale_uncertainty = 0.0;
     Tracker m_tracker;
     Mapper m_mapper;
+    LoopDetector m_loop_detector;
     FrameDiagnostics m_diagnostics;
 
     void record_pose(const Frame& frame);

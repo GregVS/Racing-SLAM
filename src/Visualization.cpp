@@ -86,16 +86,22 @@ void Visualization::push_frame(size_t frame_index,
                                const std::vector<Point>& points,
                                const std::vector<Eigen::Vector3f>& culled,
                                const std::string& status,
-                               double meters_per_unit)
+                               double meters_per_unit,
+                               const std::vector<LoopLine>& loops)
 {
     Snapshot snapshot;
     snapshot.frame_index = frame_index;
-    cv::cvtColor(image, snapshot.image, cv::COLOR_BGR2RGB);
+    if (image.channels() == 1) {
+        cv::cvtColor(image, snapshot.image, cv::COLOR_GRAY2RGB);
+    } else {
+        cv::cvtColor(image, snapshot.image, cv::COLOR_BGR2RGB);
+    }
     snapshot.poses = poses;
     snapshot.points = points;
     snapshot.culled = culled;
     snapshot.status = status;
     snapshot.meters_per_unit = meters_per_unit;
+    snapshot.loops = loops;
 
     std::lock_guard<std::mutex> lock(m_render_lock);
     m_history.push_back(std::move(snapshot));
@@ -175,6 +181,28 @@ void Visualization::draw_camera_poses(const Snapshot& snapshot)
 
         glPopMatrix();
     }
+}
+
+void Visualization::draw_loop_edges(const Snapshot& snapshot)
+{
+    if (snapshot.loops.empty()) {
+        return;
+    }
+    const float scale = visual_scale(snapshot.meters_per_unit);
+    glLineWidth(2);
+    glBegin(GL_LINES);
+    for (const auto& edge : snapshot.loops) {
+        if (edge.verified) {
+            glColor3f(0.0f, 1.0f, 0.0f);
+        } else {
+            glColor3f(0.75f, 0.15f, 0.1f);
+        }
+        const Eigen::Vector3f from = edge.from * scale;
+        const Eigen::Vector3f to = edge.to * scale;
+        glVertex3f(from[0], from[1], from[2]);
+        glVertex3f(to[0], to[1], to[2]);
+    }
+    glEnd();
 }
 
 void Visualization::draw_points(const Snapshot& snapshot)
@@ -334,6 +362,21 @@ void Visualization::draw_top_down(const Snapshot& snapshot)
     glVertex2f(current[0], current[1]);
     glEnd();
 
+    glLineWidth(2);
+    glBegin(GL_LINES);
+    for (const auto& edge : snapshot.loops) {
+        if (edge.verified) {
+            glColor3f(0.0f, 1.0f, 0.0f);
+        } else {
+            glColor3f(0.75f, 0.15f, 0.1f);
+        }
+        const Eigen::Vector3f from = edge.from * scale;
+        const Eigen::Vector3f to = edge.to * scale;
+        glVertex2f(from[0], from[2]);
+        glVertex2f(to[0], to[2]);
+    }
+    glEnd();
+
     glPopMatrix();
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();
@@ -385,6 +428,7 @@ void Visualization::run()
             if (!m_history.empty()) {
                 const Snapshot& snapshot = m_history[m_history.size() - 1 - m_view_offset];
                 draw_camera_poses(snapshot);
+                draw_loop_edges(snapshot);
                 draw_points(snapshot);
                 draw_image(snapshot);
                 draw_top_down(snapshot);

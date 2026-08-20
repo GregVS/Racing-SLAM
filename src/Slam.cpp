@@ -35,7 +35,7 @@ Slam::Slam(const VideoLoader& video_loader,
     : m_video_loader(video_loader), m_camera(camera), m_static_mask(image_mask),
       m_feature_extractor(std::move(feature_extractor)), m_config(config),
       m_tracker(m_camera, m_static_mask, *m_feature_extractor, m_config, m_map),
-      m_mapper(m_camera, m_config, m_map, m_inertial)
+      m_mapper(m_camera, m_config, m_map, m_inertial), m_loop_detector(m_config, m_camera, *m_feature_extractor)
 {
     m_inertial.seconds_per_frame = m_config.seconds_per_frame;
     if (m_config.imu_path.empty()) {

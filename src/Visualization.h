@@ -22,13 +22,20 @@ class Visualization {
     Visualization(const std::string& window_name = "3D Viewer");
     ~Visualization();
 
+    struct LoopLine {
+        Eigen::Vector3f from;
+        Eigen::Vector3f to;
+        bool verified = false;
+    };
+
     void push_frame(size_t frame_index,
                     const cv::Mat& image,
                     const std::vector<Eigen::Matrix4f>& poses,
                     const std::vector<Point>& points,
                     const std::vector<Eigen::Vector3f>& culled,
                     const std::string& status,
-                    double meters_per_unit = 0.0);
+                    double meters_per_unit = 0.0,
+                    const std::vector<LoopLine>& loops = {});
     bool wait_for_step();
     void initialize(int width = 1024, int height = 1024);
     void run();
@@ -45,9 +52,11 @@ class Visualization {
         std::vector<Eigen::Vector3f> culled;
         std::string status;
         double meters_per_unit = 0.0; // zero before IMU alignment
+        std::vector<LoopLine> loops;
     };
 
     void draw_camera_poses(const Snapshot& snapshot);
+    void draw_loop_edges(const Snapshot& snapshot);
     void draw_points(const Snapshot& snapshot);
     void draw_image(const Snapshot& snapshot);
     void draw_top_down(const Snapshot& snapshot);
