@@ -24,6 +24,9 @@ class Map {
 
     void remove_point(MapPoint* point);
 
+    /** Move discarded observations onto kept and delete discarded */
+    void fuse(MapPoint& kept, MapPoint& discarded);
+
     void associate(KeyFrame& key_frame, MapPoint& point, size_t keypoint_index);
     void disassociate(KeyFrame& key_frame, MapPoint& point);
 

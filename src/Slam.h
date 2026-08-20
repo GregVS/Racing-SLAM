@@ -46,6 +46,7 @@ struct FrameDiagnostics {
     LoopQueryResult loop;
     bool loop_closed = false;
     float loop_correction = 0.0F;
+    size_t loops = 0;
 };
 
 class Slam {

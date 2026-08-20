@@ -32,6 +32,9 @@ class Mapper {
 
     const std::vector<std::shared_ptr<KeyFrame>>& key_frames() const;
 
+    void fuse_loop(KeyFrame& query, const std::vector<MapPointMatch>& inliers);
+    void bundle_adjust(KeyFrame& key_frame);
+
   private:
     /** Numbers of covisible points with the last key frame */
     size_t covisible_points(const Frame& frame) const;
@@ -46,7 +49,6 @@ class Mapper {
 
     /** Initial inertial state estimate for new key frame */
     void seed_inertial_state(KeyFrame& key_frame) const;
-    void bundle_adjust(KeyFrame& key_frame);
     void cull_points(FrameDiagnostics& diagnostics, KeyFrame& key_frame);
 
     const Camera& m_camera;

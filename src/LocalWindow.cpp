@@ -30,16 +30,20 @@ std::vector<FrameConfig> build_local_window(const std::vector<std::shared_ptr<Ke
 
     std::vector<FrameConfig> frames;
     frames.reserve(key_frames.size() + 1);
+    bool included = false;
     for (size_t i = 0; i < key_frames.size(); i++) {
         auto* key_frame = key_frames[i].get();
         bool fixed = i < 2; // for scale anchoring
         if (window.find(key_frame) != window.end()) {
             frames.push_back({!fixed, key_frame});
+            included = included || key_frame == &new_frame;
         } else if (fixed || anchors.find(key_frame) != anchors.end()) {
             frames.push_back({false, key_frame});
         }
     }
-    frames.push_back({true, &new_frame});
+    if (!included) {
+        frames.push_back({true, &new_frame});
+    }
     return frames;
 }
 

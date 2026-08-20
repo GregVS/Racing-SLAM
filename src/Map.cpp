@@ -63,18 +63,52 @@ MapPoint& Map::create_point(const Eigen::Vector3f& position, KeyFrame& frame, si
 void Map::remove_point(MapPoint* point)
 {
     for (auto it = m_points.begin(); it != m_points.end(); ++it) {
-        if (it->get() == point) {
-            for (const auto& [frame, index] : (*it)->observations()) {
-                frame->remove_map_match({**it, index});
-            }
-            m_points.erase(it);
-            break;
+        if (it->get() != point) {
+            continue;
         }
+        const auto observations = (*it)->observations();
+        for (const auto& [frame, index] : observations) {
+            frame->remove_map_match({**it, index});
+        }
+        m_points.erase(it);
+        break;
     }
+}
+
+void Map::fuse(MapPoint& kept, MapPoint& discarded)
+{
+    if (&kept == &discarded) {
+        return;
+    }
+    const auto observations = discarded.observations();
+    for (const auto& [frame, index] : observations) {
+        disassociate(*frame, discarded);
+        if (kept.is_observed_by(frame) || frame->is_matched(index) || frame->is_matched(kept)) {
+            continue;
+        }
+        associate(*frame, kept, index);
+    }
+    if (discarded.track_consistent()) {
+        kept.set_track_consistent();
+    }
+    remove_point(&discarded);
 }
 
 void Map::associate(KeyFrame& frame, MapPoint& point, size_t keypoint_index)
 {
+    if (frame.is_matched(keypoint_index) && &frame.map_match(keypoint_index) == &point &&
+        point.is_observed_by(&frame)) {
+        return;
+    }
+    if (frame.is_matched(keypoint_index)) {
+        MapPoint& existing = frame.map_match(keypoint_index);
+        if (&existing != &point) {
+            disassociate(frame, existing);
+        }
+    }
+    if (point.is_observed_by(&frame)) {
+        disassociate(frame, point);
+    }
     point.add_observation(&frame, keypoint_index);
     frame.add_map_match(MapPointMatch{point, keypoint_index});
 }

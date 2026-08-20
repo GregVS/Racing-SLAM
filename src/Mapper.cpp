@@ -126,6 +126,28 @@ Mapper::insert(Frame&& frame, TrackStore& tracks, const Trajectory& trajectory, 
     return key_frame;
 }
 
+void Mapper::fuse_loop(KeyFrame& query, const std::vector<MapPointMatch>& inliers)
+{
+    for (const auto& inlier : inliers) {
+        if (inlier.keypoint_index >= query.features().keypoints.size()) {
+            continue;
+        }
+        MapPoint& kept = inlier.point;
+        if (!query.is_matched(inlier.keypoint_index)) {
+            if (query.is_matched(kept)) {
+                continue;
+            }
+            m_map.associate(query, kept, inlier.keypoint_index);
+            continue;
+        }
+        MapPoint& discarded = query.map_match(inlier.keypoint_index);
+        if (&discarded == &kept) {
+            continue;
+        }
+        m_map.fuse(kept, discarded);
+    }
+}
+
 void Mapper::triangulate_tracks(KeyFrame& key_frame,
                                 TrackStore& tracks,
                                 const Trajectory& trajectory,

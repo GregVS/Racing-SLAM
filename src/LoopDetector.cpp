@@ -58,6 +58,7 @@ struct Verification {
     Eigen::Matrix4f pose = Eigen::Matrix4f::Identity();
     std::vector<Eigen::Vector2f> query_uv;
     std::vector<Eigen::Vector2f> candidate_uv;
+    std::vector<MapPointMatch> inlier_matches;
 };
 
 float percentile(std::vector<float> values, float fraction)
@@ -216,14 +217,13 @@ verify_pnp(const KeyFrame& query, const KeyFrame& candidate, const Camera& camer
         return verification;
     }
 
-    std::vector<MapPointMatch> inlier_matches;
-    inlier_matches.reserve(static_cast<size_t>(inliers.rows));
+    verification.inlier_matches.reserve(static_cast<size_t>(inliers.rows));
     for (int i = 0; i < inliers.rows; i++) {
         const int index = inliers.cols == 1 ? inliers.at<int>(i, 0) : inliers.at<int>(0, i);
-        inlier_matches.push_back(correspondences[static_cast<size_t>(index)]);
+        verification.inlier_matches.push_back(correspondences[static_cast<size_t>(index)]);
     }
-    verification.inliers = inlier_matches.size();
-    set_correspondences(verification, query, candidate, inlier_matches);
+    verification.inliers = verification.inlier_matches.size();
+    set_correspondences(verification, query, candidate, verification.inlier_matches);
     finish_verification(verification, query, candidate, pose_from_rt(rvec, tvec));
     return verification;
 }
@@ -331,6 +331,7 @@ struct LoopDetector::Impl {
         Eigen::Matrix4f pose = Eigen::Matrix4f::Identity();
         size_t inliers = 0;
         float drift = 0.0F;
+        std::vector<MapPointMatch> inlier_matches;
     };
     std::vector<StreakHit> streak;
 
@@ -412,8 +413,13 @@ void LoopDetector::Impl::update_streak(size_t from,
 
     const auto& candidate = ranked[chosen];
     const auto& verification = verifications[chosen];
-    streak.push_back(
-        {from, candidate.index, candidate.match, verification.pose, verification.inliers, verification.drift});
+    streak.push_back({from,
+                      candidate.index,
+                      candidate.match,
+                      verification.pose,
+                      verification.inliers,
+                      verification.drift,
+                      verification.inlier_matches});
 
     if (streak.size() < MIN_CONSISTENT) {
         return;
@@ -429,7 +435,9 @@ void LoopDetector::Impl::update_streak(size_t from,
         }
     }
     const Eigen::Matrix4d relative = hit.pose.cast<double>() * hit.candidate->pose().inverse().cast<double>();
-    constraints.push_back({from, hit.candidate_index, relative});
+    constraints.push_back({from, hit.candidate_index, relative, hit.inlier_matches});
+    std::cout << "Loop constraint kf " << from << " -> " << hit.candidate_index << " inliers "
+              << hit.inlier_matches.size() << '\n';
     new_loop = true;
 }
 

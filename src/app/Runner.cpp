@@ -7,6 +7,7 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <sstream>
 #include <stdexcept>
 #include <yaml-cpp/yaml.h>
 
@@ -137,7 +138,7 @@ void run_viewer(Slam& slam, const Camera& camera)
         std::ostringstream status;
         status << "map " << diagnostics.map_size << "  matches " << frame.num_map_matches() << "  culled "
                << diagnostics.culled.size() << "  poisoned " << diagnostics.poisoned << "  new "
-               << diagnostics.triangulated;
+               << diagnostics.triangulated << "  loops " << diagnostics.loops;
         std::vector<Visualization::LoopLine> loops;
         loops.reserve(loop.edges.size());
         for (const auto& edge : loop.edges) {

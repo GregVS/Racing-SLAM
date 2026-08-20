@@ -8,6 +8,7 @@
 
 #include "Imu.h"
 #include "ImuStream.h"
+#include "features/FeatureExtractor.h"
 
 namespace slam {
 // Forward Declarations
@@ -83,6 +84,7 @@ struct PoseGraphConstraint {
     size_t from = 0;
     size_t to = 0;
     Eigen::Matrix4d relative = Eigen::Matrix4d::Identity();
+    std::vector<slam::MapPointMatch> inliers;
 };
 
 /** PGO for poses and loop constraints. Moves keyframes and rigidly transforms their points */

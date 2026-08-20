@@ -79,8 +79,23 @@ void set_inertial_state(Frame& frame, const imu::State& state)
 
 void Frame::add_map_match(const MapPointMatch& match)
 {
-    if (m_map_matches[match.keypoint_index] == nullptr) {
+    MapPoint* previous = m_map_matches[match.keypoint_index];
+    if (previous == &match.point) {
+        return;
+    }
+    if (previous == nullptr) {
         m_num_map_matches++;
+    } else {
+        m_matched_map_points.erase(previous);
+    }
+    for (size_t i = 0; i < m_map_matches.size(); i++) {
+        if (m_map_matches[i] != &match.point || i == match.keypoint_index) {
+            continue;
+        }
+        m_map_matches[i] = nullptr;
+        if (m_num_map_matches > 0) {
+            m_num_map_matches--;
+        }
     }
     m_map_matches[match.keypoint_index] = &match.point;
     m_matched_map_points.insert(&match.point);
@@ -88,11 +103,16 @@ void Frame::add_map_match(const MapPointMatch& match)
 
 void Frame::remove_map_match(const MapPointMatch& match)
 {
-    if (m_map_matches[match.keypoint_index] != nullptr) {
-        m_num_map_matches--;
-    }
-    m_map_matches[match.keypoint_index] = nullptr;
     m_matched_map_points.erase(&match.point);
+    for (size_t i = 0; i < m_map_matches.size(); i++) {
+        if (m_map_matches[i] != &match.point) {
+            continue;
+        }
+        m_map_matches[i] = nullptr;
+        if (m_num_map_matches > 0) {
+            m_num_map_matches--;
+        }
+    }
 }
 
 MapPoint& Frame::map_match(size_t index) const
