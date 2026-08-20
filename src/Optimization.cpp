@@ -113,13 +113,21 @@ namespace slam::optimization {
 
 namespace {
 
-// Shared solver setup for both graphs
-bool solve(ceres::Problem& problem)
+constexpr int POSE_ITERATIONS = 10;
+constexpr int BA_ITERATIONS = 10;
+constexpr int PGO_ITERATIONS = 20;
+
+int solver_threads()
+{
+    return static_cast<int>(std::max(1U, std::thread::hardware_concurrency()));
+}
+
+bool solve(ceres::Problem& problem, int max_iterations, ceres::LinearSolverType linear_solver)
 {
     ceres::Solver::Options options;
-    options.linear_solver_type = ceres::SPARSE_SCHUR;
-    options.max_num_iterations = 100;
-    options.num_threads = 1;
+    options.linear_solver_type = linear_solver;
+    options.max_num_iterations = max_iterations;
+    options.num_threads = solver_threads();
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
     std::cout << summary.BriefReport() << '\n';
@@ -246,7 +254,7 @@ bool refine_pose(Frame& frame, const Camera& camera, const InertialConstraint& i
             nullptr,
             pose_params.data());
     }
-    if (!solve(problem)) {
+    if (!solve(problem, POSE_ITERATIONS, ceres::DENSE_QR)) {
         return false;
     }
     unpack_pose(pose_params, frame);
@@ -346,7 +354,7 @@ bool bundle_adjust(const std::vector<FrameConfig>& frames,
         }
     }
 
-    if (!solve(problem)) {
+    if (!solve(problem, BA_ITERATIONS, ceres::SPARSE_SCHUR)) {
         return false;
     }
     for (const auto& frame_config : frames) {
@@ -597,8 +605,8 @@ bool pose_graph(const std::vector<std::shared_ptr<KeyFrame>>& key_frames,
 
     ceres::Solver::Options options;
     options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
-    options.max_num_iterations = 50;
-    options.num_threads = 1;
+    options.max_num_iterations = PGO_ITERATIONS;
+    options.num_threads = solver_threads();
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
     std::cout << "Pose graph " << (four_dof ? "4-DOF" : "SE3") << " " << summary.BriefReport() << '\n';
