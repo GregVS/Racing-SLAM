@@ -12,16 +12,18 @@ class Frame;
 class KeyFrame;
 class Map;
 
-/** Matches keypoints to map points by projection and descriptor distance */
 class MapMatcher {
   public:
     MapMatcher(const Camera& camera, float max_descriptor_distance, cv::NormTypes norm_type);
 
-    /** Considers every point in the map */
+    /** Match to every point in the map via reprojection */
     std::vector<MapPointMatch> match_map(const Frame& frame, Map& map) const;
 
-    /** Considers only the points a given key frame observes */
+    /** Match to a key frame's points via reprojection */
     std::vector<MapPointMatch> match_key_frame(const Frame& frame, Map& map, KeyFrame* key_frame) const;
+
+    /** Descriptor match to a key frame's points via knn */
+    std::vector<MapPointMatch> match_descriptors(const Frame& frame, const KeyFrame& key_frame) const;
 
   private:
     std::vector<MapPointMatch> match(const Frame& frame, Map& map, KeyFrame* required_observer) const;
